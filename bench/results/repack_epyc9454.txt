@@ -1,0 +1,25 @@
+AMD EPYC 9454 (48 cores), 2026-11-16, pac 0.1.0: frames written as the detector does (bitshuffle-lz4, 8 kB), then pac_repack_chunk to bitshuffle-zstd 248 kB; chunks in memory
+
+thaumatin_9_1_000001.h5: 96 frames of 36187152 bytes (uint16), written again as bitshuffle-lz4 with 8 kB blocks, ratio 22.08
+ threads  pixels GB/s      read GB/s   written GB/s    ratio
+       1         3.23          0.146          0.047    68.80
+       4        12.20          0.552          0.177    68.80
+       8        23.88          1.081          0.347    68.80
+      16        47.46          2.149          0.690    68.80
+      32        69.83          3.162          1.015    68.80
+
+silicon_u16_zstd2_256k.h5: 128 frames of 8942032 bytes (uint16), written again as bitshuffle-lz4 with 8 kB blocks, ratio 59.76
+ threads  pixels GB/s      read GB/s   written GB/s    ratio
+       1         4.38          0.073          0.018   247.20
+       4        16.00          0.268          0.065   247.20
+       8        31.62          0.529          0.128   247.20
+      16        64.94          1.087          0.263   247.20
+      32        93.59          1.566          0.379   247.20
+
+ceo2_u32_zstd2_256k.h5: 72 frames of 17884064 bytes (uint32), written again as bitshuffle-lz4 with 8 kB blocks, ratio 4.55
+ threads  pixels GB/s      read GB/s   written GB/s    ratio
+       1         2.10          0.462          0.411     5.12
+       4         8.37          1.839          1.634     5.12
+       8        16.63          3.654          3.247     5.12
+      16        28.55          6.275          5.576     5.12
+      32        45.57         10.015          8.899     5.12

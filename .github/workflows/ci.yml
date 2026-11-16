@@ -1,0 +1,100 @@
+name: CI
+on: [push, pull_request]
+
+# The tests generate their own data (tests/test_pac.c): nothing is downloaded.
+# "quick" = small inputs only, for emulated and slow machines.
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: C89 and C++98
+        run: make check-c89 CC=${{ matrix.cc }}
+      - name: tests (every x86 kernel the runner has)
+        run: make -j4 check CC=${{ matrix.cc }}
+      - name: tests under the sanitizers
+        run: |
+          make -j4 BUILD=build-asan CC=${{ matrix.cc }} PACFLAGS=-DPAC_VALIDATE_SEQUENCES \
+            CFLAGS="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined" build-asan/test_pac
+          build-asan/test_pac 1 20 quick
+
+  # AArch64 hardware: the NEON kernel
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: make check-c89
+      - run: make -j4 check
+
+  macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: make -j4 check
+
+  # an old compiler and C library (gcc 7, glibc 2.27), as the Python 2.7 builds of bslz4_to_sparse use
+  linux-old-gcc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: |
+          docker run --rm -v "$PWD":/w -w /w ubuntu:18.04 bash -c "
+            apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
+            gcc --version | head -1 && make check-c89 && make -j4 build/test_pac && build/test_pac 1 5 quick"
+
+  # other architectures in containers: 32-bit x86 runs natively, the others under qemu
+  linux-other:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/386, linux/arm/v7, linux/ppc64le]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: docker/setup-qemu-action@v3
+      - run: |
+          docker run --rm --platform ${{ matrix.platform }} -v "$PWD":/w -w /w debian:bookworm bash -c "
+            apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
+            uname -m && make -j4 CFLAGS=-O2 build/test_pac && build/test_pac 1 5 quick"
+
+  # MSVC (the current one on the runner), 64 and 32 bit: src/pac.c compiled as C, which for cl is
+  # close to the C89 subset the source keeps to.  Only the SSE2 kernel is built (no target
+  # attributes in MSVC, so no run-time dispatch: /arch:AVX2 would build the AVX2 one, but the
+  # binary would then need AVX2 everywhere).
+  msvc:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: build and test
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.arch }} >nul
+          mkdir build
+          cl /nologo /O2 /W3 /c /Fobuild\ /DPAC_WITH_KCB /Ithird_party\zstd\lib /Ithird_party\lz4\lib src\pac.c || exit /b 1
+          cl /nologo /O2 /c /Fobuild\ third_party\lz4\lib\lz4.c || exit /b 1
+          cl /nologo /O2 /c /Fobuild\ /DZSTD_DISABLE_ASM=1 /DZSTD_LEGACY_SUPPORT=0 third_party\zstd\lib\common\*.c third_party\zstd\lib\compress\*.c third_party\zstd\lib\decompress\*.c || exit /b 1
+          cl /nologo /O2 /std:c11 /c /Fobuild\ third_party\kcb\src\bitshuffle.c || exit /b 1
+          cl /nologo /O2 /W3 /Isrc /Ithird_party\zstd\lib /Ithird_party\lz4\lib tests\test_pac.c build\*.obj /Febuild\test_pac.exe || exit /b 1
+          build\test_pac.exe 1 20 quick
