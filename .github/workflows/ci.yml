@@ -54,13 +54,25 @@ jobs:
             apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
             gcc --version | head -1 && make check-c89 && make -j4 build/test_pac && build/test_pac 1 5 quick"
 
-  # other architectures in containers: 32-bit x86 runs natively, the others under qemu
+  # 32-bit x86, built on the runner with gcc -m32.  A linux/386 debian container could not resolve
+  # DNS on the runners (twice), while the qemu containers below could; it runs natively, so its
+  # 32-bit syscalls meet the host kernel and docker's filters directly, which is the likely cause.
+  linux-x86-32:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-multilib >/dev/null
+      - run: make -j4 BUILD=build-x86_32 CC="gcc -m32" CFLAGS=-O2 build-x86_32/test_pac && build-x86_32/test_pac 1 5 quick
+
+  # other architectures in containers, under qemu
   linux-other:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/386, linux/arm/v7, linux/ppc64le]
+        platform: [linux/arm/v7, linux/ppc64le]
     steps:
       - uses: actions/checkout@v4
         with:
