@@ -69,6 +69,40 @@ stock lz4 with 8 kB blocks, the format detectors write today.
   plane-aware encoder (same output), and 1.2 to 2 times faster than decoding and writing stock zstd level 2,
   whose files are 5 to 34 % larger.
 
+## Against every zstd level
+
+![pac zstd against every zstd level, compression ratio against encode speed](docs/levels.png)
+
+The dashed line is stock bitshuffle-zstd (kcb transpose, then `ZSTD_compressCCtx`) at every level from
+-20 to 22, 248 kB blocks; the diamonds are pac zstd with `pac_set_raw_literals` at 0, 5 and 10 %.  One
+core, detector gaps set to 2^n-1.  On the dense CeO2 frames pac 0 % is both smaller and faster than
+the highest levels: ratio 2.56 against 2.53 for levels 15 to 22 (uint16), at 1313 MB/s
+against 9 to 40 MB/s.  On the sparse frames (silicon, thaumatin) it is faster than every level, 3300
+to 5300 MB/s, but not the smallest: it sits near levels 3 to 9, and level 22 is 4 to 21 % smaller at
+7 to 27 MB/s.  Raw literals at 5 and 10 % trade 4 to 7 % of ratio on CeO2 for 1.5 to 1.7 times the speed, and
+change nothing on the sparse frames.  On dense data the negative levels can be faster than
+pac 10 %: for uint16 CeO2, levels -20 and -5 run at 3145 and 2399 MB/s against 2288 MB/s,
+with ratios 12 and 3 % lower; for uint32 CeO2, level -20 is 3 % slower than pac 10 %, with a 26 % lower ratio.  Cells are ratio, encode MB/s of pixels.
+
+| encoder | silicon uint16 | silicon uint32 | thaumatin uint16 | thaumatin uint32 | CeO2 uint16 | CeO2 uint32 |
+|---|---:|---:|---:|---:|---:|---:|
+| pac 0 % | 148, 4092 | 261, 5321 | 64.6, 3319 | 122, 4564 | 2.56, 1313 | 5.09, 2126 |
+| pac 5 % | 148, 4072 | 261, 5274 | 64.6, 3288 | 122, 4517 | 2.44, 1913 | 4.89, 2829 |
+| pac 10 % | 148, 4066 | 261, 5296 | 64.6, 3274 | 122, 4520 | 2.38, 2288 | 4.74, 3501 |
+| zstd -20 | 8.5, 3072 | 7.2, 3025 | 8.81, 2824 | 9.89, 3172 | 2.09, 3145 | 3.51, 3396 |
+| zstd -5 | 23.9, 2736 | 23.1, 2820 | 19.0, 2377 | 24.5, 2869 | 2.3, 2399 | 4.26, 2869 |
+| zstd -1 | 66.5, 2888 | 70.2, 3111 | 33.6, 2356 | 47.0, 2906 | 2.39, 2135 | 4.67, 2817 |
+| zstd 1 | 85.9, 2757 | 97.6, 2978 | 42.3, 2290 | 61.2, 2777 | 2.43, 1294 | 4.75, 1871 |
+| zstd 2 | 130, 2899 | 208, 3401 | 48.1, 2167 | 81.2, 2820 | 2.44, 1167 | 4.85, 1765 |
+| zstd 3 | 131, 3285 | 211, 3979 | 47.3, 2200 | 79.6, 2968 | 2.44, 1096 | 4.84, 1726 |
+| zstd 9 | 155, 837 | 286, 1333 | 57.8, 491 | 112, 844 | 2.45, 333 | 4.88, 583 |
+| zstd 15 | 176, 111 | 311, 204 | 66.4, 87 | 127, 171 | 2.53, 40 | 5.02, 82 |
+| zstd 19 | 181, 31 | 324, 59 | 66.7, 22 | 129, 43 | 2.53, 14 | 5.04, 24 |
+| zstd 22 | 183, 14 | 329, 27 | 67.2, 7 | 130, 14 | 2.53, 9 | 5.04, 14 |
+
+Rerun: `python3 bench/levels.py --core N`, then `python3 bench/plot_levels.py` (numbers in
+`bench/results/levels.json`).
+
 ## How it works
 
 After the bit transpose, a block of pixels is a stack of bit planes.  For counting detectors the
