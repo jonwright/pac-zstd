@@ -1,6 +1,6 @@
-"""pac zstd (raw literals 0, 5, 10 %) against stock bitshuffle-zstd at every zstd level.
+"""pac zstd (raw literals 0, 5, 10 %; --raw for others) against stock bitshuffle-zstd at every zstd level.
 
-    python3 bench/levels.py [--core K] [--out bench/results/levels.json] [--only CASE ...]
+    python3 bench/levels.py [--core K] [--out bench/results/levels.json] [--only CASE ...] [--raw 0,5,10]
     python3 bench/plot_levels.py                   # docs/levels.png, from that file
 
 Three files, each as uint16 and as uint32 (values cast, not rescaled; gaps as written), 248 kB
@@ -34,7 +34,6 @@ CASES = {
     "CeO2 uint32": ("ceo2_u32_zstd2_256k.h5", ID11, 8, None),
 }
 ZSTD, BLOCK = 2, 253952  # PAC_ZSTD_BLOCK
-RAW_PERCENT = [0, 5, 10]
 LEVELS = list(range(-20, 0)) + list(range(1, 23))
 
 p = argparse.ArgumentParser()
@@ -43,6 +42,7 @@ p.add_argument("--lib", default=os.path.join(HERE, "..", "build", "libpacbench.s
 p.add_argument("--out", default=os.path.join(HERE, "results", "levels.json"))
 p.add_argument("--core", type=int, default=None, help="pin to this core")
 p.add_argument("--only", nargs="*", help="only the cases whose name contains one of these")
+p.add_argument("--raw", default="0,5,10", help="pac_set_raw_literals percentages, comma separated")
 args = p.parse_args()
 if args.core is not None:
     os.sched_setaffinity(0, {args.core})
@@ -146,7 +146,7 @@ for case in CASES:
         t_enc = best(lambda: [one(i) for i in range(n)], reps)
         return mb * 1e6 / sum(len(c) for c in packed), mb / t_enc
 
-    for pc in RAW_PERCENT:
+    for pc in [int(x) for x in args.raw.split(",")]:
         lib.pac_set_raw_literals(enc, pc)
         one = lambda i: lib.pac_compress_chunk(enc, buf.ctypes.data, cap, raw[i].ctypes.data, fb, item, BLOCK)
         ratio, e = measure(one, 3)

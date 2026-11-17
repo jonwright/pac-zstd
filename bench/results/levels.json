@@ -1146,271 +1146,289 @@
      "encoder": "pac zstd",
      "raw_percent": 0,
      "ratio": 2.5557123177669063,
-     "enc_mbs": 1312.5764193446914
+     "enc_mbs": 1321.2994914929911
     },
     {
      "encoder": "pac zstd",
      "raw_percent": 5,
      "ratio": 2.4370190093343327,
-     "enc_mbs": 1913.1997797053
+     "enc_mbs": 1928.6185266708812
     },
     {
      "encoder": "pac zstd",
      "raw_percent": 10,
      "ratio": 2.377417617785955,
-     "enc_mbs": 2287.5612240619002
+     "enc_mbs": 2317.4556266222594
+    },
+    {
+     "encoder": "pac zstd",
+     "raw_percent": 25,
+     "ratio": 2.377417617785955,
+     "enc_mbs": 2319.4272775875984
+    },
+    {
+     "encoder": "pac zstd",
+     "raw_percent": 50,
+     "ratio": 2.377417617785955,
+     "enc_mbs": 2318.4809214818174
+    },
+    {
+     "encoder": "pac zstd",
+     "raw_percent": 100,
+     "ratio": 2.377417617785955,
+     "enc_mbs": 2360.7930219346067
     },
     {
      "encoder": "stock zstd",
      "level": -20,
      "ratio": 2.0910178803370076,
-     "enc_mbs": 3144.5193603287785
+     "enc_mbs": 3067.5754652481996
     },
     {
      "encoder": "stock zstd",
      "level": -19,
      "ratio": 2.106613596308068,
-     "enc_mbs": 3093.3573988350713
+     "enc_mbs": 3038.8294720769195
     },
     {
      "encoder": "stock zstd",
      "level": -18,
      "ratio": 2.103954002346705,
-     "enc_mbs": 3059.3801334750397
+     "enc_mbs": 2994.111932916451
     },
     {
      "encoder": "stock zstd",
      "level": -17,
      "ratio": 2.1232893069573002,
-     "enc_mbs": 3026.6925452098253
+     "enc_mbs": 2968.008295873463
     },
     {
      "encoder": "stock zstd",
      "level": -16,
      "ratio": 2.124096421209046,
-     "enc_mbs": 2956.573762623693
+     "enc_mbs": 2913.229704830773
     },
     {
      "encoder": "stock zstd",
      "level": -15,
      "ratio": 2.1265364316396904,
-     "enc_mbs": 2903.9660437772136
+     "enc_mbs": 2858.5320365985185
     },
     {
      "encoder": "stock zstd",
      "level": -14,
      "ratio": 2.139964663307817,
-     "enc_mbs": 2889.010938880344
+     "enc_mbs": 2834.387484371534
     },
     {
      "encoder": "stock zstd",
      "level": -13,
      "ratio": 2.148125929288005,
-     "enc_mbs": 2792.97378909426
+     "enc_mbs": 2753.459848212415
     },
     {
      "encoder": "stock zstd",
      "level": -12,
      "ratio": 2.172581089744018,
-     "enc_mbs": 2809.4473824577176
+     "enc_mbs": 2768.299429897319
     },
     {
      "encoder": "stock zstd",
      "level": -11,
      "ratio": 2.1880722349993893,
-     "enc_mbs": 2776.070971929202
+     "enc_mbs": 2735.5681154312483
     },
     {
      "encoder": "stock zstd",
      "level": -10,
      "ratio": 2.209485167027629,
-     "enc_mbs": 2721.011824345627
+     "enc_mbs": 2677.2731966136835
     },
     {
      "encoder": "stock zstd",
      "level": -9,
      "ratio": 2.2117921964109954,
-     "enc_mbs": 2647.484484613327
+     "enc_mbs": 2598.9434639132537
     },
     {
      "encoder": "stock zstd",
      "level": -8,
      "ratio": 2.239537978606941,
-     "enc_mbs": 2641.2259909190448
+     "enc_mbs": 2590.0445596337813
     },
     {
      "encoder": "stock zstd",
      "level": -7,
      "ratio": 2.2562618011285935,
-     "enc_mbs": 2578.1555792822273
+     "enc_mbs": 2525.53284236495
     },
     {
      "encoder": "stock zstd",
      "level": -6,
      "ratio": 2.277352574372394,
-     "enc_mbs": 2505.8025705000696
+     "enc_mbs": 2454.1723006081775
     },
     {
      "encoder": "stock zstd",
      "level": -5,
      "ratio": 2.2990279140828163,
-     "enc_mbs": 2399.30873991288
+     "enc_mbs": 2366.2008129049136
     },
     {
      "encoder": "stock zstd",
      "level": -4,
      "ratio": 2.321723459371153,
-     "enc_mbs": 2364.34266428157
+     "enc_mbs": 2324.606978389587
     },
     {
      "encoder": "stock zstd",
      "level": -3,
      "ratio": 2.3457658104741728,
-     "enc_mbs": 2311.925725173605
+     "enc_mbs": 2272.406337870888
     },
     {
      "encoder": "stock zstd",
      "level": -2,
      "ratio": 2.3695479988096655,
-     "enc_mbs": 2248.9331642524066
+     "enc_mbs": 2225.200816462177
     },
     {
      "encoder": "stock zstd",
      "level": -1,
      "ratio": 2.3943783720822425,
-     "enc_mbs": 2134.958390706639
+     "enc_mbs": 2107.5183365353437
     },
     {
      "encoder": "stock zstd",
      "level": 1,
      "ratio": 2.4277725653315074,
-     "enc_mbs": 1293.7776432018354
+     "enc_mbs": 1281.7014809612976
     },
     {
      "encoder": "stock zstd",
      "level": 2,
      "ratio": 2.4366719450363767,
-     "enc_mbs": 1166.5842446536399
+     "enc_mbs": 1154.126306099841
     },
     {
      "encoder": "stock zstd",
      "level": 3,
      "ratio": 2.4360459685568805,
-     "enc_mbs": 1096.311952137414
+     "enc_mbs": 1086.7154842606851
     },
     {
      "encoder": "stock zstd",
      "level": 4,
      "ratio": 2.437988091744037,
-     "enc_mbs": 630.3921797704484
+     "enc_mbs": 627.8287384439062
     },
     {
      "encoder": "stock zstd",
      "level": 5,
      "ratio": 2.438527949229059,
-     "enc_mbs": 574.8220229834527
+     "enc_mbs": 573.3859312945409
     },
     {
      "encoder": "stock zstd",
      "level": 6,
      "ratio": 2.4422544560844712,
-     "enc_mbs": 491.5891905552704
+     "enc_mbs": 490.5148701792941
     },
     {
      "encoder": "stock zstd",
      "level": 7,
      "ratio": 2.4457439178936453,
-     "enc_mbs": 440.97415670535685
+     "enc_mbs": 439.74185820418694
     },
     {
      "encoder": "stock zstd",
      "level": 8,
      "ratio": 2.4468677478803507,
-     "enc_mbs": 391.71743736742883
+     "enc_mbs": 390.7483379546589
     },
     {
      "encoder": "stock zstd",
      "level": 9,
      "ratio": 2.446807238550402,
-     "enc_mbs": 333.2509737727107
+     "enc_mbs": 331.36764524586937
     },
     {
      "encoder": "stock zstd",
      "level": 10,
      "ratio": 2.4470685464767246,
-     "enc_mbs": 270.8782356198036
+     "enc_mbs": 269.7841375690515
     },
     {
      "encoder": "stock zstd",
      "level": 11,
      "ratio": 2.4644231020649427,
-     "enc_mbs": 145.5589624186666
+     "enc_mbs": 145.09323324513022
     },
     {
      "encoder": "stock zstd",
      "level": 12,
      "ratio": 2.464654899074955,
-     "enc_mbs": 99.7397751930708
+     "enc_mbs": 99.61217098097507
     },
     {
      "encoder": "stock zstd",
      "level": 13,
      "ratio": 2.5044102017100967,
-     "enc_mbs": 58.31416446200401
+     "enc_mbs": 58.231781092824
     },
     {
      "encoder": "stock zstd",
      "level": 14,
      "ratio": 2.5264818040349115,
-     "enc_mbs": 43.28865227178765
+     "enc_mbs": 43.375036295903044
     },
     {
      "encoder": "stock zstd",
      "level": 15,
      "ratio": 2.5310110545588094,
-     "enc_mbs": 39.67882640526914
+     "enc_mbs": 39.732899384148396
     },
     {
      "encoder": "stock zstd",
      "level": 16,
      "ratio": 2.5310576210174403,
-     "enc_mbs": 31.819899880263893
+     "enc_mbs": 31.7287038015042
     },
     {
      "encoder": "stock zstd",
      "level": 17,
      "ratio": 2.5317704807646333,
-     "enc_mbs": 21.88751568826328
+     "enc_mbs": 21.82675251038997
     },
     {
      "encoder": "stock zstd",
      "level": 18,
      "ratio": 2.532850388303383,
-     "enc_mbs": 19.275521486990833
+     "enc_mbs": 19.214392542326724
     },
     {
      "encoder": "stock zstd",
      "level": 19,
      "ratio": 2.533728205706712,
-     "enc_mbs": 14.211105979835038
+     "enc_mbs": 14.173380342830061
     },
     {
      "encoder": "stock zstd",
      "level": 20,
      "ratio": 2.534014872831597,
-     "enc_mbs": 11.677289099568538
+     "enc_mbs": 11.640754136061505
     },
     {
      "encoder": "stock zstd",
      "level": 21,
      "ratio": 2.534014872831597,
-     "enc_mbs": 11.674987885744114
+     "enc_mbs": 11.64079225246805
     },
     {
      "encoder": "stock zstd",
      "level": 22,
      "ratio": 2.534219007871121,
-     "enc_mbs": 8.978725620671147
+     "enc_mbs": 8.956206271394453
     }
    ]
   },
@@ -1426,274 +1444,292 @@
      "encoder": "pac zstd",
      "raw_percent": 0,
      "ratio": 5.08607885349204,
-     "enc_mbs": 2126.213872457081
+     "enc_mbs": 2129.617679518911
     },
     {
      "encoder": "pac zstd",
      "raw_percent": 5,
      "ratio": 4.89389903947587,
-     "enc_mbs": 2828.5890009606724
+     "enc_mbs": 2830.340388238587
     },
     {
      "encoder": "pac zstd",
      "raw_percent": 10,
      "ratio": 4.743019104248483,
-     "enc_mbs": 3501.4490951169378
+     "enc_mbs": 3488.840902012352
+    },
+    {
+     "encoder": "pac zstd",
+     "raw_percent": 25,
+     "ratio": 4.742906839998906,
+     "enc_mbs": 3518.3704571907315
+    },
+    {
+     "encoder": "pac zstd",
+     "raw_percent": 50,
+     "ratio": 4.742906839998906,
+     "enc_mbs": 3516.97335274359
+    },
+    {
+     "encoder": "pac zstd",
+     "raw_percent": 100,
+     "ratio": 4.742906839998906,
+     "enc_mbs": 3619.6195268620104
     },
     {
      "encoder": "stock zstd",
      "level": -20,
      "ratio": 3.5053365343294485,
-     "enc_mbs": 3395.6715520779358
+     "enc_mbs": 3421.270232597647
     },
     {
      "encoder": "stock zstd",
      "level": -19,
      "ratio": 3.4973281488295145,
-     "enc_mbs": 3344.9999641629347
+     "enc_mbs": 3321.3748542173494
     },
     {
      "encoder": "stock zstd",
      "level": -18,
      "ratio": 3.538769611172056,
-     "enc_mbs": 3317.5812427507853
+     "enc_mbs": 3283.8146679102233
     },
     {
      "encoder": "stock zstd",
      "level": -17,
      "ratio": 3.5520657356232,
-     "enc_mbs": 3240.0729582287436
+     "enc_mbs": 3242.8099632604362
     },
     {
      "encoder": "stock zstd",
      "level": -16,
      "ratio": 3.646828720457657,
-     "enc_mbs": 3279.5099734601495
+     "enc_mbs": 3246.8185058041663
     },
     {
      "encoder": "stock zstd",
      "level": -15,
      "ratio": 3.692628587654629,
-     "enc_mbs": 3262.8634927605963
+     "enc_mbs": 3239.699985716488
     },
     {
      "encoder": "stock zstd",
      "level": -14,
      "ratio": 3.708016899158121,
-     "enc_mbs": 3195.1345533480885
+     "enc_mbs": 3222.299665640723
     },
     {
      "encoder": "stock zstd",
      "level": -13,
      "ratio": 3.7443218723468537,
-     "enc_mbs": 3155.55831395682
+     "enc_mbs": 3147.2760024775334
     },
     {
      "encoder": "stock zstd",
      "level": -12,
      "ratio": 3.869321511362305,
-     "enc_mbs": 3248.6951516107188
+     "enc_mbs": 3212.808575561526
     },
     {
      "encoder": "stock zstd",
      "level": -11,
      "ratio": 3.9818671397807313,
-     "enc_mbs": 3245.746478017131
+     "enc_mbs": 3264.919676886292
     },
     {
      "encoder": "stock zstd",
      "level": -10,
      "ratio": 4.027285867534543,
-     "enc_mbs": 3209.9626541123607
+     "enc_mbs": 3179.8639517279703
     },
     {
      "encoder": "stock zstd",
      "level": -9,
      "ratio": 4.053836221205291,
-     "enc_mbs": 3164.306302801652
+     "enc_mbs": 3175.1083379916035
     },
     {
      "encoder": "stock zstd",
      "level": -8,
      "ratio": 4.060278943389064,
-     "enc_mbs": 3021.845367982335
+     "enc_mbs": 3009.769072415758
     },
     {
      "encoder": "stock zstd",
      "level": -7,
      "ratio": 4.095610428322566,
-     "enc_mbs": 2945.532081754301
+     "enc_mbs": 2926.2121868984427
     },
     {
      "encoder": "stock zstd",
      "level": -6,
      "ratio": 4.1614014872466205,
-     "enc_mbs": 2908.8223858160545
+     "enc_mbs": 2885.9913762536125
     },
     {
      "encoder": "stock zstd",
      "level": -5,
      "ratio": 4.258283088737109,
-     "enc_mbs": 2869.0783564563644
+     "enc_mbs": 2845.166500110227
     },
     {
      "encoder": "stock zstd",
      "level": -4,
      "ratio": 4.3415389619045825,
-     "enc_mbs": 2811.603769247516
+     "enc_mbs": 2819.4940736448307
     },
     {
      "encoder": "stock zstd",
      "level": -3,
      "ratio": 4.419525626141756,
-     "enc_mbs": 2774.0003817498587
+     "enc_mbs": 2746.9694798191395
     },
     {
      "encoder": "stock zstd",
      "level": -2,
      "ratio": 4.603475097734852,
-     "enc_mbs": 2890.634779380585
+     "enc_mbs": 2889.4387720398954
     },
     {
      "encoder": "stock zstd",
      "level": -1,
      "ratio": 4.665952039864474,
-     "enc_mbs": 2817.155414597944
+     "enc_mbs": 2837.6692777694852
     },
     {
      "encoder": "stock zstd",
      "level": 1,
      "ratio": 4.748552890057879,
-     "enc_mbs": 1870.6457852243946
+     "enc_mbs": 1874.7168361548352
     },
     {
      "encoder": "stock zstd",
      "level": 2,
      "ratio": 4.850704105972479,
-     "enc_mbs": 1764.6972737010537
+     "enc_mbs": 1764.8657352175908
     },
     {
      "encoder": "stock zstd",
      "level": 3,
      "ratio": 4.844651249476162,
-     "enc_mbs": 1725.5063905374093
+     "enc_mbs": 1720.1872092570086
     },
     {
      "encoder": "stock zstd",
      "level": 4,
      "ratio": 4.866634116428036,
-     "enc_mbs": 1055.1173931224166
+     "enc_mbs": 1056.1541615057806
     },
     {
      "encoder": "stock zstd",
      "level": 5,
      "ratio": 4.8685074181247945,
-     "enc_mbs": 984.0048404728976
+     "enc_mbs": 981.2087055239075
     },
     {
      "encoder": "stock zstd",
      "level": 6,
      "ratio": 4.880539807493768,
-     "enc_mbs": 824.5618656218903
+     "enc_mbs": 822.2999473988177
     },
     {
      "encoder": "stock zstd",
      "level": 7,
      "ratio": 4.8751974433928025,
-     "enc_mbs": 755.7203478403793
+     "enc_mbs": 753.3954547825766
     },
     {
      "encoder": "stock zstd",
      "level": 8,
      "ratio": 4.878144075213272,
-     "enc_mbs": 664.575984601469
+     "enc_mbs": 663.8577175355194
     },
     {
      "encoder": "stock zstd",
      "level": 9,
      "ratio": 4.878202122729073,
-     "enc_mbs": 583.1672152806971
+     "enc_mbs": 582.1884626042759
     },
     {
      "encoder": "stock zstd",
      "level": 10,
      "ratio": 4.878658567378609,
-     "enc_mbs": 493.14901856545447
+     "enc_mbs": 491.6172337348697
     },
     {
      "encoder": "stock zstd",
      "level": 11,
      "ratio": 4.901439426113768,
-     "enc_mbs": 304.20878181259707
+     "enc_mbs": 303.36412278230586
     },
     {
      "encoder": "stock zstd",
      "level": 12,
      "ratio": 4.901597103945951,
-     "enc_mbs": 207.1944835848748
+     "enc_mbs": 206.89085406483272
     },
     {
      "encoder": "stock zstd",
      "level": 13,
      "ratio": 4.950230316433082,
-     "enc_mbs": 118.99709059745274
+     "enc_mbs": 118.77663188216319
     },
     {
      "encoder": "stock zstd",
      "level": 14,
      "ratio": 5.009426849629324,
-     "enc_mbs": 88.80692121533559
+     "enc_mbs": 89.17562747674894
     },
     {
      "encoder": "stock zstd",
      "level": 15,
      "ratio": 5.018246531913078,
-     "enc_mbs": 82.19046511876297
+     "enc_mbs": 82.43267789223475
     },
     {
      "encoder": "stock zstd",
      "level": 16,
      "ratio": 5.027204191982912,
-     "enc_mbs": 64.75569689254877
+     "enc_mbs": 64.65015284429728
     },
     {
      "encoder": "stock zstd",
      "level": 17,
      "ratio": 5.029164635515522,
-     "enc_mbs": 44.3789210548554
+     "enc_mbs": 44.29930486128196
     },
     {
      "encoder": "stock zstd",
      "level": 18,
      "ratio": 5.034442838383605,
-     "enc_mbs": 36.38239006278598
+     "enc_mbs": 36.28762399236778
     },
     {
      "encoder": "stock zstd",
      "level": 19,
      "ratio": 5.036339081213564,
-     "enc_mbs": 23.98149431037957
+     "enc_mbs": 23.92131949907599
     },
     {
      "encoder": "stock zstd",
      "level": 20,
      "ratio": 5.0369782772991805,
-     "enc_mbs": 18.877453943259077
+     "enc_mbs": 18.830975324969728
     },
     {
      "encoder": "stock zstd",
      "level": 21,
      "ratio": 5.0369782772991805,
-     "enc_mbs": 18.874685799813733
+     "enc_mbs": 18.842410389687814
     },
     {
      "encoder": "stock zstd",
      "level": 22,
      "ratio": 5.037585885599056,
-     "enc_mbs": 13.568633090294545
+     "enc_mbs": 13.544267475279087
     }
    ]
   }
  },
- "run_seconds": 642
+ "run_seconds": 220
 }
