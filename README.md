@@ -27,7 +27,8 @@ on sparse ones it is faster than every level.
 
 The dashed line is stock bitshuffle-zstd (kcb transpose, then `ZSTD_compressCCtx`) at every level from
 -20 to 22, 248 kB blocks; the diamonds are pac zstd with `pac_set_raw_literals` at 0, 5 and 10 %.  One
-core, detector gaps set to 2^n-1.  On the dense CeO2 frames pac 0 % is both smaller and faster than
+core, detector gaps set to 2^n-1.  The speed axis is linear and starts at 1/10 of the fastest
+encoder in each panel; the slower levels are in the table.  On the dense CeO2 frames pac 0 % is both smaller and faster than
 the highest levels: ratio 2.56 against 2.53 for levels 15 to 22 (uint16), at 1313 MB/s
 against 9 to 40 MB/s.  On the sparse frames (silicon, thaumatin) it is faster than every level, 3300
 to 5300 MB/s, but not the smallest: it sits near levels 3 to 9, and level 22 is 4 to 21 % smaller at

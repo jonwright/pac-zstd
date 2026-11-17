@@ -34,27 +34,32 @@ for i, row in enumerate(ROWS):
         for sp in ("top", "right"):
             ax.spines[sp].set_visible(False)
         rs = R["cases"]["%s %s" % (row, col)]["results"]
+        # x: linear, from 1/10 of the fastest encoder of the panel (a 10x slowdown) to the fastest
+        top = max(r["enc_mbs"] for r in rs)
+        rs = [r for r in rs if r["enc_mbs"] >= top / 10]
         st = [r for r in rs if r["encoder"] == "stock zstd"]
+        slowest = min(st, key=lambda r: r["enc_mbs"])["level"]
         ax.plot([r["enc_mbs"] for r in st], [r["ratio"] for r in st], "o", color=ORANGE, lw=1.2, ms=3,
                 alpha=0.8, ls=(0, (4, 2)), zorder=3)
         for r in st:
-            if r["level"] in LABELS:
+            if r["level"] in LABELS or r["level"] == slowest:
                 ax.annotate(str(r["level"]), (r["enc_mbs"], r["ratio"]), xytext=(4, -9), textcoords="offset points",
                             fontsize=7, color=MUTED)
         for r in [r for r in rs if r["encoder"] == "pac zstd"]:
             ax.plot(r["enc_mbs"], r["ratio"], "D", color=ORANGE, ms=8, mec=INK, mew=0.6, zorder=5)
             ax.annotate("pac %d %%" % r["raw_percent"], (r["enc_mbs"], r["ratio"]), xytext=(-9, {0: 7, 5: -3, 10: -13}[r["raw_percent"]]),
                         textcoords="offset points", fontsize=8, fontweight="bold", ha="right", zorder=6)
-        ax.set_xscale("log")
+        ax.set_xlim(top / 10, top * 1.06)
         ax.set_title("%s, %s" % (row, col), loc="left", fontsize=10, fontweight="bold")
         if i == 2:
-            ax.set_xlabel("encode speed, MB/s of pixels (log)")
+            ax.set_xlabel("encode speed, MB/s of pixels")
         if j == 0:
             ax.set_ylabel("compression ratio")
-fig.suptitle("pac zstd against every zstd level (dashed line, stock bitshuffle-zstd; numbers are levels)",
+fig.suptitle("pac zstd against every zstd level (dashed line, stock bitshuffle-zstd; numbers are levels)\n"
+             "x axis: from 1/10 of the fastest encoder of each panel; slower levels are left out",
              x=0.02, y=0.985, ha="left", fontsize=12, fontweight="bold")
 fig.text(0.02, 0.008, note, fontsize=7.5, color=MUTED)
-fig.subplots_adjust(left=0.07, right=0.98, top=0.93, bottom=0.07, hspace=0.3, wspace=0.18)
+fig.subplots_adjust(left=0.07, right=0.98, top=0.915, bottom=0.07, hspace=0.3, wspace=0.18)
 out = os.path.join(args.out, "levels.png")
 fig.savefig(out, dpi=120, facecolor=SURF)
 print("wrote", out)
