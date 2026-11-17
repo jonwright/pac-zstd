@@ -17,6 +17,56 @@ dectris/compression and bslz4_to_sparse read them unchanged.  Only the encoder i
 - The same parser can also write bitshuffle-lz4 ("pac lz4": 1.1 to 1.5 times faster than stock
   lz4, but with a 1 to 20 % lower ratio).  It is there, but it is not a big win.
 
+## Against every zstd level
+
+No zstd level is both faster and smaller than pac zstd on any of these frames: pac moves the
+ratio-speed frontier of bitshuffle-zstd.  On dense frames it is smaller than every level, up to 22;
+on sparse ones it is faster than every level.
+
+![pac zstd against every zstd level, compression ratio against encode speed](docs/levels.png)
+
+The dashed line is stock bitshuffle-zstd (kcb transpose, then `ZSTD_compressCCtx`) at every level from
+-20 to 22; the diamonds are pac zstd with `pac_set_raw_literals` at 0, 5 and 10 % (and 25, 50 and
+100 % on CeO2).  248 kB blocks, one core, detector gaps set to 2^n-1.  The figure shows the uint16
+frames; uint32 gives the same picture and is in the table.  The speed axis is linear and starts at
+1/10 of the fastest encoder in each panel; the slower levels are in the table.
+
+- **Dense frames (CeO2):** pac 0 % is smaller than every level: ratio 2.56 against 2.53 for levels
+  15 to 22 (uint16), at 1321 MB/s against 9 to 40 MB/s.
+- **Sparse frames (silicon, thaumatin):** pac is faster than every level, 3300 to 5300 MB/s.  It is
+  not the smallest: its ratio lies between levels 3 and 15, and level 22 is 4 to 21 % smaller at 7 to
+  27 MB/s.  Raw literals at 5 and 10 % change nothing there.
+- **Raw literals on CeO2:** 5 and 10 % trade 4 to 7 % of ratio for 1.3 to 1.8 times the speed.
+  25, 50 and 100 % give the same chunks as 10 %: at 10 % every literal block of these frames is
+  already stored raw.
+- **Negative levels** can be faster than pac 10 % on dense data.  For uint16 CeO2, levels -20 and
+  -5 run at 3068 and 2366 MB/s against 2317 MB/s, with ratios 12 and 3 % lower.  For uint32 CeO2,
+  level -20 is 2 % slower than pac 10 %, with a 26 % lower ratio.
+
+Cells are ratio, encode MB/s of pixels.
+
+| encoder | silicon uint16 | silicon uint32 | thaumatin uint16 | thaumatin uint32 | CeO2 uint16 | CeO2 uint32 |
+|---|---:|---:|---:|---:|---:|---:|
+| pac 0 % | 148, 4092 | 261, 5321 | 64.6, 3319 | 122, 4564 | 2.56, 1321 | 5.09, 2130 |
+| pac 5 % | 148, 4072 | 261, 5274 | 64.6, 3288 | 122, 4517 | 2.44, 1929 | 4.89, 2830 |
+| pac 10 % | 148, 4066 | 261, 5296 | 64.6, 3274 | 122, 4520 | 2.38, 2317 | 4.74, 3489 |
+| pac 25 % | - | - | - | - | 2.38, 2319 | 4.74, 3518 |
+| pac 50 % | - | - | - | - | 2.38, 2318 | 4.74, 3517 |
+| pac 100 % | - | - | - | - | 2.38, 2361 | 4.74, 3620 |
+| zstd -20 | 8.5, 3072 | 7.2, 3025 | 8.81, 2824 | 9.89, 3172 | 2.09, 3068 | 3.51, 3421 |
+| zstd -5 | 23.9, 2736 | 23.1, 2820 | 19.0, 2377 | 24.5, 2869 | 2.3, 2366 | 4.26, 2845 |
+| zstd -1 | 66.5, 2888 | 70.2, 3111 | 33.6, 2356 | 47.0, 2906 | 2.39, 2108 | 4.67, 2838 |
+| zstd 1 | 85.9, 2757 | 97.6, 2978 | 42.3, 2290 | 61.2, 2777 | 2.43, 1282 | 4.75, 1875 |
+| zstd 2 | 130, 2899 | 208, 3401 | 48.1, 2167 | 81.2, 2820 | 2.44, 1154 | 4.85, 1765 |
+| zstd 3 | 131, 3285 | 211, 3979 | 47.3, 2200 | 79.6, 2968 | 2.44, 1087 | 4.84, 1720 |
+| zstd 9 | 155, 837 | 286, 1333 | 57.8, 491 | 112, 844 | 2.45, 331 | 4.88, 582 |
+| zstd 15 | 176, 111 | 311, 204 | 66.4, 87 | 127, 171 | 2.53, 40 | 5.02, 82 |
+| zstd 19 | 181, 31 | 324, 59 | 66.7, 22 | 129, 43 | 2.53, 14 | 5.04, 24 |
+| zstd 22 | 183, 14 | 329, 27 | 67.2, 7 | 130, 14 | 2.53, 9 | 5.04, 14 |
+
+Rerun: `python3 bench/levels.py --core N` (CeO2 with `--only CeO2 --raw 0,5,10,25,50,100`), then
+`python3 bench/plot_levels.py`; the numbers are in `bench/results/levels.json`.
+
 ## Transcoding detector files: lz4 (8 kB) to zstd (248 kB)
 
 One core of an AMD EPYC 9454, chunks in memory.  The input is each frame as the detector writes
