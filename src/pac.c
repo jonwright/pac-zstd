@@ -318,9 +318,11 @@ struct pac_encoder {
      * pack (only pac_compress_chunk / pac_repack_chunk need them) up to cap_full */
     size_t cap_seq;
     size_t cap_full;
+    size_t cap_out;         /* the scratch a block frame is encoded into, then checked */
     unsigned char *tmp;     /* the transposed block, PAC_PAD more bytes */
     unsigned char *scratch; /* for the transpose; a decoded source block in pac_repack_chunk */
     unsigned char *pack;    /* the lower bytes of the pixels of a block */
+    unsigned char *out;     /* scratch for a block frame, ZSTD_compressBound(bytes) */
     ZSTD_Sequence *seq;
 };
 
@@ -393,6 +395,7 @@ void pac_free(pac_encoder *enc)
     free(enc->tmp);
     free(enc->scratch);
     free(enc->pack);
+    free(enc->out);
     free(enc->seq);
     free(enc);
 }
@@ -424,6 +427,32 @@ static int pac_reserve_seq(pac_encoder *enc, size_t block)
     if (!enc->tmp || !enc->seq)
         return 0;
     enc->cap_seq = block;
+    return 1;
+}
+
+/* A block frame is written to a scratch of the worst-case size and only then
+ * copied to dst: ZSTD_compressSequences writes the frame header and the entropy
+ * tables into its destination before it can notice a buffer that is too small,
+ * so a too-small dst must never reach it, for any input (src/pac_parse.inl's
+ * 64-byte tail read is handled by the PAC_PAD on tmp, not on dst). */
+static int pac_reserve_out(pac_encoder *enc, size_t block)
+{
+    /* The worst case of the codec: zstd's frame bound, or (for LZ4) the bound
+     * pac_emit_lz4 enforces before writing a literal-only block.  pac_emit_lz4
+     * needs block + block / 255 + 16, which can be a few bytes more than
+     * ZSTD_compressBound at large blocks (both are below block + block / 64). */
+    size_t bound = ZSTD_compressBound(block);
+    size_t lz4 = block + block / 255 + 16;
+    if (lz4 > bound)
+        bound = lz4;
+    if (enc->cap_out >= bound)
+        return 1;
+    free(enc->out);
+    enc->cap_out = 0;
+    enc->out = (unsigned char *) malloc(bound);
+    if (!enc->out)
+        return 0;
+    enc->cap_out = bound;
     return 1;
 }
 
@@ -994,22 +1023,26 @@ size_t pac_compress_block(pac_encoder *enc, void *dst, size_t cap, const void *s
 {
     unsigned char *o = (unsigned char *) dst;
     const unsigned char *s = (const unsigned char *) src;
-    size_t plane;
+    size_t c, plane;
     if (!enc || !pac_args_ok(elem, nbytes))
         return 0;
-    /* ZSTD_compressSequences writes the Huffman table into dst before it can
-     * notice a too-small dst; require the usual worst case up front so a small
-     * cap is refused (with a valid return) instead of overflowing the buffer.
-     * pac_emit_lz4 does a similar check of its own. */
-    if (cap < ZSTD_compressBound(nbytes))
-        return 0;
     if (!pac_reserve_seq(enc, nbytes))
+        return 0;
+    if (!pac_reserve_out(enc, nbytes))
         return 0;
     /* the block is already bit-transposed; copy it to the padded buffer so the
      * parse can read up to 64 bytes past the end (s itself is not padded) */
     memcpy(enc->tmp, s, nbytes);
     plane = nbytes / (8 * elem);
-    return pac_encode_block(enc, o, cap, nbytes, plane, pac_zero_from(enc->tmp, nbytes, plane));
+    /* encode to a worst-case scratch, never to dst directly: ZSTD_compressSequences
+     * writes the frame header and the entropy tables into its destination before it
+     * can notice a buffer that is too small, so a too-small dst must not reach it */
+    c = pac_encode_block(enc, enc->out, enc->cap_out, nbytes, plane,
+                         pac_zero_from(enc->tmp, nbytes, plane));
+    if (!c || c > cap)
+        return 0;
+    memcpy(o, enc->out, c);
+    return c;
 }
 
 size_t pac_repack_chunk(pac_encoder *enc, void *dst_, size_t cap, const void *src_,
