@@ -272,8 +272,8 @@ static void one_block_case(pac_encoder *enc, int codec, size_t elem, int pattern
     if (cs != nb || bitshuf_decode_block((char *) out, (const char *) dec, (char *) dscr2, n, elem) != 0 ||
         memcmp(out, pix, nb) != 0)
         fail("decode_block", codec, elem, pattern, n, 0, pac_isa(enc));
-    /* a dst too small is refused and the encoder stays usable for the next block */
-    if (pac_compress_block(enc, cmp, ZSTD_compressBound(nb) - 1, tb, nb, elem) != 0)
+    /* a dst one byte too small is refused and the encoder stays usable for the next block */
+    if (pac_compress_block(enc, cmp, c - 1, tb, nb, elem) != 0)
         fail("accepted small dst", codec, elem, pattern, n, 0, pac_isa(enc));
     checks++;
     {
