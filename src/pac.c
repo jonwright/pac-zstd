@@ -303,8 +303,10 @@ struct pac_encoder {
     ZSTD_CCtx *cctx;     /* literals: Huffman where it gains */
     ZSTD_CCtx *cctx_raw; /* literals: raw */
     size_t window_for;   /* the block size the zstd window was last set for */
-    /* for blocks of up to cap_block bytes: */
-    size_t cap_block;
+    /* seq and tmp are reserved for blocks of up to cap_seq bytes; scratch and
+     * pack (only pac_compress_chunk / pac_repack_chunk need them) up to cap_full */
+    size_t cap_seq;
+    size_t cap_full;
     unsigned char *tmp;     /* the transposed block, PAC_PAD more bytes */
     unsigned char *scratch; /* for the transpose; a decoded source block in pac_repack_chunk */
     unsigned char *pack;    /* the lower bytes of the pixels of a block */
@@ -401,23 +403,36 @@ int pac_force_isa(pac_encoder *enc, int isa)
     return 1;
 }
 
-static int pac_reserve(pac_encoder *enc, size_t block)
+static int pac_reserve_seq(pac_encoder *enc, size_t block)
 {
-    if (enc->cap_block >= block)
+    if (enc->cap_seq >= block)
         return 1;
     free(enc->tmp);
-    free(enc->scratch);
-    free(enc->pack);
     free(enc->seq);
-    enc->cap_block = 0;
+    enc->cap_seq = 0;
     enc->tmp = (unsigned char *) calloc(block + PAC_PAD, 1);
-    enc->scratch = (unsigned char *) malloc(block + PAC_PAD);
-    enc->pack = (unsigned char *) malloc(block);
     /* a match is at least 4 bytes; a delimiter per zstd block (at most one per plane piece) */
     enc->seq = (ZSTD_Sequence *) malloc((block / 4 + block / 512 + 1024) * sizeof(ZSTD_Sequence));
-    if (!enc->tmp || !enc->scratch || !enc->pack || !enc->seq)
+    if (!enc->tmp || !enc->seq)
         return 0;
-    enc->cap_block = block;
+    enc->cap_seq = block;
+    return 1;
+}
+
+static int pac_reserve(pac_encoder *enc, size_t block)
+{
+    if (enc->cap_full >= block)
+        return 1;
+    if (!pac_reserve_seq(enc, block))
+        return 0;
+    free(enc->scratch);
+    free(enc->pack);
+    enc->cap_full = 0;
+    enc->scratch = (unsigned char *) malloc(block + PAC_PAD);
+    enc->pack = (unsigned char *) malloc(block);
+    if (!enc->scratch || !enc->pack)
+        return 0;
+    enc->cap_full = block;
     return 1;
 }
 
@@ -755,6 +770,53 @@ size_t pac_compress_chunk(pac_encoder *enc, void *dst_, size_t cap, const void *
         done += b;
     }
     return n;
+}
+
+/* The byte offset where the trailing all-zero planes of the transposed block
+ * s[0..n) begin, rounded up to a plane: scan back over whole 64-bit words and
+ * stop at the last non-zero one, then round the found position to the next
+ * plane boundary.  n is a multiple of 8 (8 * elem), so the block is whole
+ * words; the PAC_PAD of zeroed bytes after s keeps the tail word in-bounds. */
+static size_t pac_zero_from(const unsigned char *s, size_t n, size_t plane)
+{
+    size_t from = n;
+    while (from > 0) {
+        pac_u64 w;
+        size_t lo = from - 8;
+        w = pac_load64(s + lo);
+        if (w) {
+            size_t b = 8;
+            while (b > 0 && ((w >> (8 * (b - 1))) & 0xff) == 0)
+                b--;
+            from = lo + b;
+            return (from + plane - 1) / plane * plane;
+        }
+        from = lo;
+    }
+    return 0; /* every byte zero (or the block is empty) */
+}
+
+size_t pac_compress_block(pac_encoder *enc, void *dst, size_t cap, const void *src,
+                          size_t nbytes, size_t elem)
+{
+    unsigned char *o = (unsigned char *) dst;
+    const unsigned char *s = (const unsigned char *) src;
+    size_t plane;
+    if (!enc || !pac_args_ok(elem, nbytes))
+        return 0;
+    /* ZSTD_compressSequences writes the Huffman table into dst before it can
+     * notice a too-small dst; require the usual worst case up front so a small
+     * cap is refused (with a valid return) instead of overflowing the buffer.
+     * pac_emit_lz4 does a similar check of its own. */
+    if (cap < ZSTD_compressBound(nbytes))
+        return 0;
+    if (!pac_reserve_seq(enc, nbytes))
+        return 0;
+    /* the block is already bit-transposed; copy it to the padded buffer so the
+     * parse can read up to 64 bytes past the end (s itself is not padded) */
+    memcpy(enc->tmp, s, nbytes);
+    plane = nbytes / (8 * elem);
+    return pac_encode_block(enc, o, cap, nbytes, plane, pac_zero_from(enc->tmp, nbytes, plane));
 }
 
 size_t pac_repack_chunk(pac_encoder *enc, void *dst_, size_t cap, const void *src_,

@@ -77,6 +77,16 @@ size_t pac_bound(size_t src_size, size_t elem_size, size_t block_size);
 size_t pac_compress_chunk(pac_encoder *enc, void *dst, size_t dst_capacity, const void *src,
                           size_t src_size, size_t elem_size, size_t block_size);
 
+/* An already bit-transposed block (nbytes bytes, a multiple of 8 * elem_size,
+ * elem_size in {1, 2, 4, 8}, nbytes <= 128 MB) to one LZ4 block or zstd frame:
+ * the trailing zero planes are stitched into one run, nothing is searched but
+ * offset 1 and `plane`.  The block is returned to `dst` (no chunk header, the
+ * raw LZ4 block or zstd frame), and is decodable by an existing reader.
+ * Returns the compressed size, or 0 on error or if dst_capacity is too small
+ * (enc can be reused for the next block). */
+size_t pac_compress_block(pac_encoder *enc, void *dst, size_t dst_capacity,
+                          const void *bitshuffled_src, size_t nbytes, size_t elem_size);
+
 /* Chunk to chunk without any bit transpose: a bitshuffle chunk whose blocks
  * are src_codec (PAC_LZ4 as the detector writes, or PAC_ZSTD) is decoded
  * block by block, the bit planes of its blocks are regrouped into blocks of

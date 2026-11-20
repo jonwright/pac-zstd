@@ -242,6 +242,56 @@ static void one_case(pac_encoder *enc[2], size_t elem, int pattern, size_t n, si
     free(chunk);
 }
 
+/* one already-transposed block (n * elem bytes) through pac_compress_block: encode it, then decode
+ * with the reference pieces (LZ4_decompress_safe / ZSTD_decompress + kcb untranspose) and compare
+ * with the pixels.  The transposed input is an exact-size malloc (no padding): any out-of-bounds read
+ * past nbytes is caught by the sanitizers. */
+static void one_block_case(pac_encoder *enc, int codec, size_t elem, int pattern, size_t n)
+{
+    const size_t nb = n * elem;
+    const size_t cap = ZSTD_compressBound(nb) + LZ4_compressBound((int) nb) + 16;
+    unsigned char *pix = malloc(nb + 1), *tb = malloc(nb), *scr = malloc(nb), *dec = malloc(nb);
+    unsigned char *dscr2 = malloc(nb), *cmp = malloc(cap + 64), *out = malloc(nb + 1);
+    size_t c, cs;
+    fill(pix, n, elem, pattern);
+    if (bitshuf_encode_block((char *) tb, (const char *) pix, (char *) scr, n, elem) != 0) {
+        fail("transpose", codec, elem, pattern, n, 0, pac_isa(enc));
+        goto done;
+    }
+    memset(cmp + cap, 0xA5, 64);
+    c = pac_compress_block(enc, cmp, cap, tb, nb, elem);
+    checks++;
+    if (!c || c > cap || cmp[cap] != 0xA5 || cmp[cap + 63] != 0xA5) {
+        fail("compress_block", codec, elem, pattern, n, 0, pac_isa(enc));
+        goto done;
+    }
+    if (codec == PAC_LZ4)
+        cs = (size_t) LZ4_decompress_safe((const char *) cmp, (char *) dec, (int) c, (int) nb);
+    else
+        cs = ZSTD_decompress(dec, nb, cmp, c);
+    if (cs != nb || bitshuf_decode_block((char *) out, (const char *) dec, (char *) dscr2, n, elem) != 0 ||
+        memcmp(out, pix, nb) != 0)
+        fail("decode_block", codec, elem, pattern, n, 0, pac_isa(enc));
+    /* a dst too small is refused and the encoder stays usable for the next block */
+    if (pac_compress_block(enc, cmp, ZSTD_compressBound(nb) - 1, tb, nb, elem) != 0)
+        fail("accepted small dst", codec, elem, pattern, n, 0, pac_isa(enc));
+    checks++;
+    {
+        size_t c2 = pac_compress_block(enc, cmp, cap, tb, nb, elem);
+        checks++;
+        if (!c2 || c2 > cap)
+            fail("remake", codec, elem, pattern, n, 0, pac_isa(enc));
+    }
+done:
+    free(pix);
+    free(tb);
+    free(scr);
+    free(dec);
+    free(dscr2);
+    free(cmp);
+    free(out);
+}
+
 int main(int argc, char **argv)
 {
     static const size_t elems[4] = {1, 2, 4, 8};
@@ -289,6 +339,17 @@ int main(int argc, char **argv)
                 block *= 31;
             one_case(enc, elem, (int) (rng() % NPATTERNS), n, block);
         }
+        for (ci = 0; ci < 2; ci++)
+            for (r = 0; r < rounds; r++) { /* pac_compress_block: one transposed block */
+                size_t elem = elems[rng() & 3];
+                size_t nb = (1 + (size_t) (rng() % 4000)) * 8 * elem;
+                if (rng() & 1)
+                    nb *= 31;
+                if (quick && nb > 65536)
+                    continue;
+                one_block_case(enc[ci], ci ? PAC_ZSTD : PAC_LZ4, elem,
+                               (int) (rng() % NPATTERNS), nb / elem);
+            }
         printf("%-9s %ld checks\n", pac_isa(enc[0]), checks - before);
         pac_free(enc[0]);
         pac_free(enc[1]);
