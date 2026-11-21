@@ -305,6 +305,19 @@ int main(int argc, char **argv)
         if (pac_compress_chunk(enc, buf, 256, src, 64, 2, 24)) fail("block not 8 elements", PAC_ZSTD, 2, 0, 0, 0, "-");
         if (pac_compress_chunk(enc, buf, 256, src, 64, 2, 0)) fail("block 0", PAC_ZSTD, 2, 0, 0, 0, "-");
         if (pac_bound(64, 2, 24)) fail("pac_bound", PAC_ZSTD, 2, 0, 0, 0, "-");
+        {
+            unsigned char stock[1024];
+            size_t ss = stock_encode(PAC_ZSTD, stock, src, 64, 2, 16), tc;
+            for (tc = 12; tc <= 34; tc++) {
+                unsigned char *tight = malloc(tc);
+                checks += 2;
+                if (pac_compress_chunk(enc, tight, tc, src, 64, 2, 16) != 0)
+                    fail("tight dst compress", PAC_ZSTD, 2, 0, 32, 16, "-");
+                if (pac_repack_chunk(enc, tight, tc, stock, ss, PAC_ZSTD, 2, 16) != 0)
+                    fail("tight dst repack", PAC_ZSTD, 2, 0, 32, 16, "-");
+                free(tight);
+            }
+        }
         pac_free(enc);
     }
     printf("%ld checks, %ld failures, %d instruction sets, seed %lu\n", checks, failures, tested, seed);

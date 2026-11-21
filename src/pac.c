@@ -601,6 +601,8 @@ static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap,
                                size_t plane, size_t zero_from)
 {
     size_t lits, ns, r;
+    if (enc->codec == PAC_ZSTD && cap < ZSTD_FRAMEHEADERSIZE_MAX)
+        return 0; /* zstd 1.5.7 ZSTD_compressSequences omits FORWARD_IF_ERROR on ZSTD_writeFrameHeader */
     ns = pac_build(enc, enc->tmp, n, plane, zero_from, &lits);
     if (enc->codec == PAC_LZ4)
         return pac_emit_lz4(enc->seq, ns, enc->tmp, n, dst, cap);
