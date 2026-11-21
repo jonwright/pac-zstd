@@ -45,6 +45,8 @@ p.add_argument("--only", nargs="*", help="only the cases whose name contains one
 p.add_argument("--raw", default="0,5,10", help="pac_set_raw_literals percentages, comma separated")
 args = p.parse_args()
 if args.core is not None:
+    if not hasattr(os, "sched_setaffinity"):
+        raise SystemExit("--core requires os.sched_setaffinity (not available on this platform)")
     os.sched_setaffinity(0, {args.core})
 
 vp, sz, ci = ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int

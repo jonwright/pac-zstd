@@ -20,7 +20,6 @@ the result is decoded with hdf5plugin and compared with the frame.
 """
 import argparse
 import ctypes
-import glob
 import os
 import struct
 import threading
@@ -54,6 +53,7 @@ vp, sz, ci = ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int
 pac = ctypes.CDLL(os.path.abspath(args.lib))
 pac.pac_create.restype = vp
 pac.pac_create.argtypes = [ci]
+pac.pac_free.argtypes = [vp]
 pac.pac_bound.restype = sz
 pac.pac_bound.argtypes = [sz, sz, sz]
 pac.pac_repack_chunk.restype = sz
@@ -108,6 +108,7 @@ def run(nthreads):
         start.wait()
         for i in range(bounds[t], bounds[t + 1]):
             out_sizes[i] = pac.pac_repack_chunk(enc, buf.ctypes.data, cap, srcs[i], len(chunks[i]), stored, item, block)
+        pac.pac_free(enc)
     ts = [threading.Thread(target=work, args=(t,)) for t in range(nthreads)]
     [t.start() for t in ts]
     start.wait()
@@ -118,18 +119,18 @@ def run(nthreads):
     return dt, int(out_sizes.sum())
 
 
-# one chunk through hdf5plugin's decoder
+# one chunk through h5py + hdf5plugin's decoder
 enc = pac.pac_create(codec)
 pac.pac_set_raw_literals(enc, args.raw)
 buf = np.zeros(cap, np.uint8)
 m = pac.pac_repack_chunk(enc, buf.ctypes.data, cap, srcs[0], len(chunks[0]), stored, item, block)
-bs = ctypes.CDLL(glob.glob(hdf5plugin.PLUGIN_PATH + "/libh5bshuf.so")[0])
-f = bs.bshuf_decompress_zstd if codec == ZSTD else bs.bshuf_decompress_lz4
-f.restype = ctypes.c_int64
-f.argtypes = [vp, vp, sz, sz, sz]
-out = np.zeros(fb, np.uint8)
-assert f(buf.ctypes.data + 12, out.ctypes.data, fb // item, item, block // item) == m - 12
-assert np.array_equal(out, first.reshape(-1).view(np.uint8))
+assert m > 0
+with h5py.File("pac_check", "w", driver="core", backing_store=False) as h:
+    dset = h.create_dataset("d", first.shape, first.dtype, chunks=first.shape,
+                            **hdf5plugin.Bitshuffle(nelems=block // item, cname=args.codec))
+    dset.id.write_direct_chunk((0,) * first.ndim, buf[:m].tobytes())
+    assert np.array_equal(dset[()], first), "h5py + hdf5plugin read something else"
+pac.pac_free(enc)
 
 print("%8s %12s %14s %14s %8s" % ("threads", "pixels GB/s", "read GB/s", "written GB/s", "ratio"))
 for nt in [int(t) for t in args.threads.split(",")]:
