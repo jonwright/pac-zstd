@@ -18,6 +18,9 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPAT_DIR="${COMPAT_DIR:-build-compat}"
+# resolve to an absolute path: the Go build runs from the tests/verify_go subshell, so a relative
+# COMPAT_DIR would make `go build -o "$COMPAT_DIR/verify_go"` land in the wrong place.
+case "$COMPAT_DIR" in /*) ;; *) COMPAT_DIR="$ROOT_DIR/$COMPAT_DIR" ;; esac
 SRC_DIR="$COMPAT_DIR/src"
 CORPUS="$COMPAT_DIR/compat_corpus.bin"
 CC="${CC:-cc}"
