@@ -425,6 +425,33 @@ int main(int argc, char **argv)
         free(pbuf);
         pac_free(enc);
     }
+    /* large-block regression (plane > ZSTD_BLOCKSIZE_MAX): exercises piece < plane invariance paths */
+    if (!quick) {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        const size_t blk = 2621440; /* plane = 163840 > ZSTD_BLOCKSIZE_MAX */
+        const size_t n = blk / 2;
+        size_t cap = pac_bound(blk, 2, blk), pc0, pc1, i;
+        unsigned char *src = malloc(blk), *out = malloc(blk), *p0 = malloc(cap), *p1 = malloc(cap);
+        for (i = 0; i < n; i++) {
+            uint16_t v = (i & 31) == 0 ? (uint16_t) 0xffff : (uint16_t) (i & 127);
+            memcpy(src + 2 * i, &v, 2);
+        }
+        pac_set_narrow(enc, 0);
+        pc0 = pac_compress_chunk(enc, p0, cap, src, blk, 2, blk);
+        pac_set_narrow(enc, 1);
+        pc1 = pac_compress_chunk(enc, p1, cap, src, blk, 2, blk);
+        checks += 2;
+        if (!pc1 || pc1 > cap || ref_decode(PAC_ZSTD, p1, pc1, 2, out, blk) != (long) blk ||
+            memcmp(out, src, blk) != 0)
+            fail("large block plane > 128kB", PAC_ZSTD, 2, 0, n, blk, pac_isa(enc));
+        if (pc0 != pc1 || memcmp(p0, p1, pc1) != 0)
+            fail("large block narrow mismatch", PAC_ZSTD, 2, 0, n, blk, pac_isa(enc));
+        free(src);
+        free(out);
+        free(p0);
+        free(p1);
+        pac_free(enc);
+    }
     printf("%ld checks, %ld failures, %d instruction sets, seed %lu\n", checks, failures, tested, seed);
     return failures ? 1 : 0;
 }

@@ -467,6 +467,152 @@ static void pac_put_le32(unsigned char *p, pac_u32 v)
     p[3] = (unsigned char) (v >> 24);
 }
 
+/* ------------------------------------------------------------------ */
+/* bit-plane invariance scan (elem > 1, little endian)                 */
+
+#if PAC_HAVE_AVX2
+PAC_ATTRIBUTE_TARGET("avx2")
+static void pac_scan_invariance_avx2(const unsigned char *in, size_t nbytes, pac_u64 smask,
+                                     pac_u64 *o_out, pac_u64 *a_out, pac_u64 *d_out, size_t *pos)
+{
+    size_t i = *pos, k;
+    pac_u64 m4[4], o_lanes[4], a_lanes[4], d_lanes[4];
+    __m256i v_or = _mm256_setzero_si256();
+    __m256i v_and = _mm256_set1_epi8((char) 0xff);
+    __m256i v_diff = _mm256_setzero_si256();
+    __m256i v_smask;
+    m4[0] = m4[1] = m4[2] = m4[3] = smask;
+    v_smask = _mm256_loadu_si256((const __m256i *) m4);
+    for (; i + 64 <= nbytes; i += 64) {
+        __m256i x0 = _mm256_loadu_si256((const __m256i *) (in + i));
+        __m256i x1 = _mm256_loadu_si256((const __m256i *) (in + i + 32));
+        __m256i d0 = _mm256_xor_si256(x0, _mm256_and_si256(_mm256_srli_epi64(x0, 1), v_smask));
+        __m256i d1 = _mm256_xor_si256(x1, _mm256_and_si256(_mm256_srli_epi64(x1, 1), v_smask));
+        v_or = _mm256_or_si256(v_or, _mm256_or_si256(x0, x1));
+        v_and = _mm256_and_si256(v_and, _mm256_and_si256(x0, x1));
+        v_diff = _mm256_or_si256(v_diff, _mm256_or_si256(d0, d1));
+    }
+    _mm256_storeu_si256((__m256i *) o_lanes, v_or);
+    _mm256_storeu_si256((__m256i *) a_lanes, v_and);
+    _mm256_storeu_si256((__m256i *) d_lanes, v_diff);
+    for (k = 0; k < 4; k++) {
+        *o_out |= o_lanes[k];
+        *a_out &= a_lanes[k];
+        *d_out |= d_lanes[k];
+    }
+    *pos = i;
+}
+#endif
+
+#if PAC_HAVE_SSE2
+PAC_ATTRIBUTE_TARGET("sse2")
+static void pac_scan_invariance_sse2(const unsigned char *in, size_t nbytes, pac_u64 smask,
+                                     pac_u64 *o_out, pac_u64 *a_out, pac_u64 *d_out, size_t *pos)
+{
+    size_t i = *pos;
+    pac_u64 m2[2], o_lanes[2], a_lanes[2], d_lanes[2];
+    __m128i v_or = _mm_setzero_si128();
+    __m128i v_and = _mm_set1_epi8((char) 0xff);
+    __m128i v_diff = _mm_setzero_si128();
+    __m128i v_smask;
+    m2[0] = m2[1] = smask;
+    v_smask = _mm_loadu_si128((const __m128i *) m2);
+    for (; i + 32 <= nbytes; i += 32) {
+        __m128i x0 = _mm_loadu_si128((const __m128i *) (in + i));
+        __m128i x1 = _mm_loadu_si128((const __m128i *) (in + i + 16));
+        __m128i d0 = _mm_xor_si128(x0, _mm_and_si128(_mm_srli_epi64(x0, 1), v_smask));
+        __m128i d1 = _mm_xor_si128(x1, _mm_and_si128(_mm_srli_epi64(x1, 1), v_smask));
+        v_or = _mm_or_si128(v_or, _mm_or_si128(x0, x1));
+        v_and = _mm_and_si128(v_and, _mm_and_si128(x0, x1));
+        v_diff = _mm_or_si128(v_diff, _mm_or_si128(d0, d1));
+    }
+    _mm_storeu_si128((__m128i *) o_lanes, v_or);
+    _mm_storeu_si128((__m128i *) a_lanes, v_and);
+    _mm_storeu_si128((__m128i *) d_lanes, v_diff);
+    *o_out |= o_lanes[0] | o_lanes[1];
+    *a_out &= a_lanes[0] & a_lanes[1];
+    *d_out |= d_lanes[0] | d_lanes[1];
+    *pos = i;
+}
+#endif
+
+#if PAC_HAVE_NEON
+static void pac_scan_invariance_neon(const unsigned char *in, size_t nbytes, pac_u64 smask,
+                                     pac_u64 *o_out, pac_u64 *a_out, pac_u64 *d_out, size_t *pos)
+{
+    size_t i = *pos;
+    pac_u64 m2[2], o_lanes[2], a_lanes[2], d_lanes[2];
+    uint64x2_t v_or = vdupq_n_u64(0);
+    uint64x2_t v_and = vdupq_n_u64(~(pac_u64) 0);
+    uint64x2_t v_diff = vdupq_n_u64(0);
+    uint64x2_t v_smask;
+    m2[0] = m2[1] = smask;
+    v_smask = vld1q_u64(m2);
+    for (; i + 32 <= nbytes; i += 32) {
+        uint64x2_t x0 = vreinterpretq_u64_u8(vld1q_u8(in + i));
+        uint64x2_t x1 = vreinterpretq_u64_u8(vld1q_u8(in + i + 16));
+        uint64x2_t d0 = veorq_u64(x0, vandq_u64(vshrq_n_u64(x0, 1), v_smask));
+        uint64x2_t d1 = veorq_u64(x1, vandq_u64(vshrq_n_u64(x1, 1), v_smask));
+        v_or = vorrq_u64(v_or, vorrq_u64(x0, x1));
+        v_and = vandq_u64(v_and, vandq_u64(x0, x1));
+        v_diff = vorrq_u64(v_diff, vorrq_u64(d0, d1));
+    }
+    vst1q_u64(o_lanes, v_or);
+    vst1q_u64(a_lanes, v_and);
+    vst1q_u64(d_lanes, v_diff);
+    *o_out |= o_lanes[0] | o_lanes[1];
+    *a_out &= a_lanes[0] & a_lanes[1];
+    *d_out |= d_lanes[0] | d_lanes[1];
+    *pos = i;
+}
+#endif
+
+static void pac_scan_invariance(int isa, const unsigned char *in, size_t n, size_t elem,
+                                pac_u64 *or_out, pac_u64 *and_out, pac_u64 *diff_out)
+{
+    const size_t nbytes = n * elem;
+    size_t i = 0, k;
+    pac_u64 o = 0, a = ~(pac_u64) 0, d = 0;
+    pac_u64 vo = 0, va = ~(pac_u64) 0, vd = 0;
+    const pac_u64 smask = elem == 8 ? (~(pac_u64) 0 >> 1)
+                                    : (elem == 4 ? (((pac_u64) 0x7fffffffUL << 32) | 0x7fffffffUL)
+                                                 : (((pac_u64) 0x7fff7fffUL << 32) | 0x7fff7fffUL));
+#if PAC_HAVE_AVX2
+    if (isa == 2 || isa == 3)
+        pac_scan_invariance_avx2(in, nbytes, smask, &o, &a, &d, &i);
+#endif
+#if PAC_HAVE_SSE2
+    if (isa == 1)
+        pac_scan_invariance_sse2(in, nbytes, smask, &o, &a, &d, &i);
+#endif
+#if PAC_HAVE_NEON
+    if (isa == 4)
+        pac_scan_invariance_neon(in, nbytes, smask, &o, &a, &d, &i);
+#endif
+    (void) isa;
+    /* n is a multiple of 8 and elem >= 2, so the tail is whole 64-bit words */
+    for (; i + 8 <= nbytes; i += 8) {
+        pac_u64 x = pac_load64(in + i);
+        o |= x;
+        a &= x;
+        d |= x ^ ((x >> 1) & smask);
+    }
+    for (k = 0; k < 8; k += elem) {
+        vo |= o >> (8 * k);
+        va &= a >> (8 * k);
+        vd |= d >> (8 * k);
+    }
+    if (elem < 8) {
+        pac_u64 mask = ((pac_u64) 1 << (8 * elem)) - 1;
+        vo &= mask;
+        va &= mask;
+        vd &= mask;
+    }
+    *or_out = vo;
+    *and_out = va;
+    *diff_out = vd;
+}
+
 static double pac_binary_entropy(double p)
 {
     if (p <= 1e-6 || p >= 1.0 - 1e-6)
@@ -852,42 +998,73 @@ static void pac_pack(unsigned char *PAC_RESTRICT out, const unsigned char *PAC_R
 }
 
 /*
- * The bit transpose of n elements of elem bytes into enc->tmp.  If the upper
- * bytes of every element are zero only the lower ones are transposed (packed
- * into enc->pack first): their planes are the same and come first, and the
- * planes of the zero bytes are zero.  Returns the number of bytes of tmp that
- * are not known to be zero, 0 on error.
+ * The bit transpose of n elements of elem bytes into enc->tmp.  When
+ * enc->narrow is enabled on elem > 1 (little endian), scans for all-zero,
+ * all-one, and eq-previous planes, transposes only the active lower bytes,
+ * and materializes invariant upper planes into enc->tmp.  Returns the byte
+ * offset from which trailing planes are all zero (at least `plane` if the
+ * whole block is zero), 0 on error.
  */
 static size_t pac_transpose(pac_encoder *enc, const unsigned char *in, size_t n, size_t elem)
 {
-    size_t keep = elem;
+    size_t keep = elem, trail_zero = 0;
+    const size_t nplanes = 8 * elem;
+    const size_t plane = n / 8;
+    const int use_eq = !(enc->codec == PAC_LZ4 && plane > 65535);
+    pac_u64 p_zero = 0, p_one = 0, p_eq = 0;
     if (enc->narrow && elem > 1 && PAC_LITTLE_ENDIAN) {
-        /* n is a multiple of 8, so the block is whole 64-bit words: the OR of all of them,
-         * folded to one element */
-        const size_t words = n * elem / 8;
-        pac_u64 o0 = 0, o1 = 0, v = 0;
-        size_t i;
-        for (i = 0; i + 2 <= words; i += 2) {
-            o0 |= pac_load64(in + 8 * i);
-            o1 |= pac_load64(in + 8 * i + 8);
+        pac_u64 vo = 0, va = 0, vd = 0;
+        const pac_u64 nmask = elem == 8 ? ~(pac_u64) 0 : (((pac_u64) 1 << nplanes) - 1);
+        size_t p, trail = 0, need_planes;
+        pac_scan_invariance(enc->isa, in, n, elem, &vo, &va, &vd);
+        for (p = 0; p < nplanes; p++) {
+            if (((vo >> p) & 1) == 0)
+                p_zero |= ((pac_u64) 1 << p);
+            else if (((va >> p) & 1) == 1)
+                p_one |= ((pac_u64) 1 << p);
+            else if (p > 0 && use_eq && ((vd >> (p - 1)) & 1) == 0)
+                p_eq |= ((pac_u64) 1 << p);
         }
-        if (i < words)
-            o0 |= pac_load64(in + 8 * i);
-        o0 |= o1;
-        for (i = 0; i < 8; i += elem)
-            v |= o0 >> (8 * i);
-        if (elem < 8)
-            v &= ((pac_u64) 1 << (8 * elem)) - 1;
-        keep = v >> 32 ? 8 : (v >> 16 ? 4 : (v >> 8 ? 2 : 1));
+        if (vo == 0 || va == nmask) {
+            memset(enc->tmp, vo == 0 ? 0 : 0xff, n * elem);
+            return vo == 0 ? plane : n * elem;
+        }
+        for (p = nplanes - 1; p > 0; p--) {
+            pac_u64 pbit = (pac_u64) 1 << p;
+            if ((p_zero | p_one | p_eq) & pbit)
+                trail++;
+            else
+                break;
+        }
+        for (p = nplanes - 1; p > 0; p--) {
+            if (p_zero & ((pac_u64) 1 << p))
+                trail_zero++;
+            else
+                break;
+        }
+        need_planes = nplanes - trail;
+        keep = need_planes <= 8 ? 1 : (need_planes <= 16 ? 2 : (need_planes <= 32 ? 4 : 8));
+        if (keep > elem)
+            keep = elem;
         if (keep < elem)
             pac_pack(enc->pack, in, n, elem, keep);
     }
     if (enc->transpose((char *) enc->tmp, (const char *) (keep == elem ? in : enc->pack),
                        (char *) enc->scratch, n, keep) != 0)
         return 0;
-    if (keep != elem)
-        memset(enc->tmp + n * keep, 0, n * (elem - keep));
-    return n * keep;
+    if (keep < elem) {
+        size_t p;
+        for (p = 8 * keep; p < nplanes; p++) {
+            pac_u64 pbit = (pac_u64) 1 << p;
+            if (p_zero & pbit)
+                memset(enc->tmp + p * plane, 0, plane);
+            else if (p_one & pbit)
+                memset(enc->tmp + p * plane, 0xff, plane);
+            else
+                memcpy(enc->tmp + p * plane, enc->tmp + (p - 1) * plane, plane);
+        }
+    }
+    return (nplanes - trail_zero) * plane;
 }
 
 static int pac_args_ok(size_t elem_size, size_t block_size)
