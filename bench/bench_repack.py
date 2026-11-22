@@ -1,7 +1,7 @@
 """pac_repack_chunk on the chunks of an HDF5 file, on several threads.
 
     python3 bench/bench_repack.py FILE.h5 DATASET [--frames N] [--threads 1,4,8,16] [--codec zstd]
-                                  [--as-detector] [--uint8 DIV] [--raw PCT]
+                                  [--as-detector] [--uint8 DIV]
 
 The file's chunks must be bitshuffle-lz4 or bitshuffle-zstd; with --as-detector the frames are first
 written again as the detector software does (stock bitshuffle-lz4, 8 kB blocks; needs
@@ -12,7 +12,6 @@ one encoder per thread.
 --uint8 DIV (implies --as-detector) makes 8-bit frames, as for the detector's fastest mode: counts
 divided by DIV and clipped at 255.  There is no real 8-bit data on Zenodo; silicon with DIV 2 is
 the sparse case, CeO2 with DIV 2 the dense one (0.1 % of pixels clipped).
---raw PCT is pac_set_raw_literals (default 0; 5 or 10 trade a few % of ratio for speed on dense data).
 
 Reports the rate in pixel bytes, in bytes read (the chunks as stored) and in bytes written, which is
 what to compare with a network link or a disk.  Needs numpy, h5py, hdf5plugin; the first chunk of
@@ -37,7 +36,6 @@ p.add_argument("--threads", default="1,4,8,16")
 p.add_argument("--codec", default="zstd", choices=["zstd", "lz4"])
 p.add_argument("--as-detector", action="store_true")
 p.add_argument("--uint8", type=int, default=0, metavar="DIV")
-p.add_argument("--raw", type=int, default=0, metavar="PCT")
 p.add_argument("--lib", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "libpac.so"))
 args = p.parse_args()
 args.as_detector = args.as_detector or args.uint8 > 0
@@ -57,7 +55,6 @@ pac.pac_free.argtypes = [vp]
 pac.pac_bound.restype = sz
 pac.pac_bound.argtypes = [sz, sz, sz]
 pac.pac_repack_chunk.restype = sz
-pac.pac_set_raw_literals.argtypes = [vp, ci]
 pac.pac_repack_chunk.argtypes = [vp, vp, sz, vp, sz, ci, sz, sz]
 LZ4, ZSTD = 1, 2
 codec = ZSTD if args.codec == "zstd" else LZ4
@@ -103,7 +100,6 @@ def run(nthreads):
     start = threading.Barrier(nthreads + 1)
     def work(t):
         enc = pac.pac_create(codec)
-        pac.pac_set_raw_literals(enc, args.raw)
         buf = np.zeros(cap, np.uint8)
         start.wait()
         for i in range(bounds[t], bounds[t + 1]):
@@ -121,7 +117,6 @@ def run(nthreads):
 
 # one chunk through h5py + hdf5plugin's decoder
 enc = pac.pac_create(codec)
-pac.pac_set_raw_literals(enc, args.raw)
 buf = np.zeros(cap, np.uint8)
 m = pac.pac_repack_chunk(enc, buf.ctypes.data, cap, srcs[0], len(chunks[0]), stored, item, block)
 assert m > 0

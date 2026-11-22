@@ -306,26 +306,20 @@ static const char *const pac_isa_names[PAC_NISA] = {"generic", "sse2", "avx2", "
 
 struct pac_encoder {
     int codec;
-    int raw_percent;
     int narrow;
     int isa;
     pac_parse_fn parse;
     pac_transpose_fn transpose;
-    ZSTD_CCtx *cctx;          /* literals: Huffman where it gains */
-    ZSTD_CCtx *cctx_raw;      /* literals: raw */
-    ZSTD_CCtx *cctx_tail;     /* magicless suffix for hybrid bt_raw frames, Huffman */
-    ZSTD_CCtx *cctx_tail_raw; /* magicless suffix for hybrid bt_raw frames, raw */
-    ZSTD_DCtx *dctx;          /* reused by pac_repack_chunk for PAC_ZSTD */
-    int window_log;           /* monotonic windowLog set on cctx* */
+    ZSTD_CCtx *cctx;      /* literals: Huffman where it gains */
+    ZSTD_CCtx *cctx_tail; /* magicless suffix for hybrid bt_raw frames */
+    ZSTD_DCtx *dctx;      /* reused by pac_repack_chunk for PAC_ZSTD */
+    int window_log;       /* monotonic windowLog set on cctx* */
     /* for blocks of up to cap_block bytes: */
     size_t cap_block;
     unsigned char *tmp;     /* the transposed block, PAC_PAD more bytes */
     unsigned char *scratch; /* for the transpose; a decoded source block in pac_repack_chunk */
     unsigned char *pack;    /* the lower bytes of the pixels of a block */
     ZSTD_Sequence *seq;
-    /* every 16th literal byte of the block being parsed, for the choice of raw literals */
-    unsigned long hist[256];
-    unsigned long hist_n;
 };
 
 #if defined(PAC_WITH_KCB)
@@ -333,7 +327,7 @@ extern int bitshuf_encode_block(char *out, const char *in, char *scratch, size_t
                                 size_t elem_size);
 #endif
 
-static ZSTD_CCtx *pac_make_cctx(int raw_literals, int magicless)
+static ZSTD_CCtx *pac_make_cctx(int magicless)
 {
     ZSTD_CCtx *c = ZSTD_createCCtx();
     size_t e = 0;
@@ -348,9 +342,6 @@ static ZSTD_CCtx *pac_make_cctx(int raw_literals, int magicless)
 #if defined(PAC_VALIDATE_SEQUENCES)
     e |= ZSTD_isError(ZSTD_CCtx_setParameter(c, ZSTD_c_validateSequences, 1));
 #endif
-    if (raw_literals)
-        e |= ZSTD_isError(ZSTD_CCtx_setParameter(c, ZSTD_c_literalCompressionMode,
-                                                 ZSTD_ps_disable));
     if (magicless) {
         e |= ZSTD_isError(ZSTD_CCtx_setParameter(c, ZSTD_c_format, ZSTD_f_zstd1_magicless));
         e |= ZSTD_isError(ZSTD_CCtx_setParameter(c, ZSTD_c_contentSizeFlag, 0));
@@ -371,7 +362,6 @@ pac_encoder *pac_create(int codec)
     if (!enc)
         return NULL;
     enc->codec = codec;
-    enc->raw_percent = 0;
     /* measured to help with kcb's SIMD transposes; with its portable transpose (POWER9) it is
      * much slower, so off x86 it is opt-in */
     enc->narrow = PAC_X86;
@@ -381,11 +371,9 @@ pac_encoder *pac_create(int codec)
     enc->transpose = bitshuf_encode_block;
 #endif
     if (codec == PAC_ZSTD) {
-        enc->cctx = pac_make_cctx(0, 0);
-        enc->cctx_raw = pac_make_cctx(1, 0);
-        enc->cctx_tail = pac_make_cctx(0, 1);
-        enc->cctx_tail_raw = pac_make_cctx(1, 1);
-        if (!enc->cctx || !enc->cctx_raw || !enc->cctx_tail || !enc->cctx_tail_raw) {
+        enc->cctx = pac_make_cctx(0);
+        enc->cctx_tail = pac_make_cctx(1);
+        if (!enc->cctx || !enc->cctx_tail) {
             pac_free(enc);
             return NULL;
         }
@@ -398,9 +386,7 @@ void pac_free(pac_encoder *enc)
     if (!enc)
         return;
     ZSTD_freeCCtx(enc->cctx);
-    ZSTD_freeCCtx(enc->cctx_raw);
     ZSTD_freeCCtx(enc->cctx_tail);
-    ZSTD_freeCCtx(enc->cctx_tail_raw);
     ZSTD_freeDCtx(enc->dctx);
     free(enc->tmp);
     free(enc->scratch);
@@ -409,7 +395,6 @@ void pac_free(pac_encoder *enc)
     free(enc);
 }
 
-void pac_set_raw_literals(pac_encoder *enc, int percent) { enc->raw_percent = percent; }
 void pac_set_narrow(pac_encoder *enc, int on) { enc->narrow = on; }
 void pac_set_transpose(pac_encoder *enc, pac_transpose_fn fn) { enc->transpose = fn; }
 const char *pac_isa(const pac_encoder *enc) { return pac_isa_names[enc->isa]; }
@@ -588,11 +573,6 @@ static size_t pac_build(pac_encoder *enc, const unsigned char *s, size_t n, size
     const size_t piece = plane < ZSTD_BLOCKSIZE_MAX ? plane : ZSTD_BLOCKSIZE_MAX;
     /* LZ4 offsets are 16 bits */
     const size_t use_plane = !(enc->codec == PAC_LZ4 && plane > 65535);
-    const int do_hist = (enc->codec == PAC_ZSTD) && (enc->raw_percent > 0 && enc->raw_percent < 100);
-    if (do_hist) {
-        memset(enc->hist, 0, sizeof(enc->hist));
-        enc->hist_n = 0;
-    }
     for (from = start_from; from < n; from += piece) {
         size_t to = from + piece < n ? from + piece : n;
         size_t lit0 = lit, l = lit, k, q, lits = 0;
@@ -611,19 +591,6 @@ static size_t pac_build(pac_encoder *enc, const unsigned char *s, size_t n, size
         for (q = 0; q < k; q++)
             lits += seq[ns + q].litLength;
         lits += l - lit0; /* the literals of this piece only */
-        if (lits && do_hist) { /* sample them: the runs between the matches */
-            size_t cur = from, p;
-            for (q = 0; q <= k; q++) {
-                /* the first run began lit0 bytes before this piece; the last one ends the piece */
-                const size_t end = q == k ? to : cur + seq[ns + q].litLength - (q == 0 ? lit0 : 0);
-                for (p = cur; p < end; p += 16) {
-                    enc->hist[s[p]]++;
-                    enc->hist_n++;
-                }
-                if (q < k)
-                    cur = end + seq[ns + q].matchLength;
-            }
-        }
         /* its own Huffman table only pays for a plane of some size */
         dense = to - from >= 1024 && lits * 20 > to - from;
         if (zblock && (alone || dense || zblock + (to - from) > ZSTD_BLOCKSIZE_MAX)) {
@@ -721,26 +688,6 @@ static size_t pac_emit_lz4(const ZSTD_Sequence *seq, size_t ns, const unsigned c
     return (size_t) (op - dst);
 }
 
-/*
- * Store the literals of the block just parsed raw?  Yes if Huffman coding would
- * save less than raw_percent % of them: the order-0 entropy of the sampled
- * literal bytes says how much it would save.
- */
-static int pac_raw_literals(const pac_encoder *enc)
-{
-    double bits = 0, n = (double) enc->hist_n;
-    int i;
-    if (enc->raw_percent <= 0 || !enc->hist_n)
-        return 0;
-    if (enc->raw_percent >= 100)
-        return 1;
-    for (i = 0; i < 256; i++)
-        if (enc->hist[i])
-            bits += (double) enc->hist[i] * (log(n) - log((double) enc->hist[i]));
-    bits /= n * log(2.0); /* per literal byte */
-    return 100.0 * (1.0 - bits / 8.0) < (double) enc->raw_percent;
-}
-
 /* Write a standard Zstd frame header with singleSegment=1, contentSizeFlag=1 (n < 2^32) */
 static size_t pac_write_zstd_fh(unsigned char *dst, size_t n)
 {
@@ -788,13 +735,9 @@ static int pac_ensure_wl(pac_encoder *enc, size_t n)
         return 1;
     /* parameters can only be set between frames: end the session of the last one */
     ZSTD_CCtx_reset(enc->cctx, ZSTD_reset_session_only);
-    ZSTD_CCtx_reset(enc->cctx_raw, ZSTD_reset_session_only);
     ZSTD_CCtx_reset(enc->cctx_tail, ZSTD_reset_session_only);
-    ZSTD_CCtx_reset(enc->cctx_tail_raw, ZSTD_reset_session_only);
     if (ZSTD_isError(ZSTD_CCtx_setParameter(enc->cctx, ZSTD_c_windowLog, wl)) ||
-        ZSTD_isError(ZSTD_CCtx_setParameter(enc->cctx_raw, ZSTD_c_windowLog, wl)) ||
-        ZSTD_isError(ZSTD_CCtx_setParameter(enc->cctx_tail, ZSTD_c_windowLog, wl)) ||
-        ZSTD_isError(ZSTD_CCtx_setParameter(enc->cctx_tail_raw, ZSTD_c_windowLog, wl)))
+        ZSTD_isError(ZSTD_CCtx_setParameter(enc->cctx_tail, ZSTD_c_windowLog, wl)))
         return 0;
     enc->window_log = wl;
     return 1;
@@ -817,13 +760,11 @@ static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap,
     if (n >= 8192 && plane >= 2048 && zero_from > 0) {
         const size_t nplanes = n / plane;
         size_t k = 0;
-        double thresh = enc->raw_percent <= 2 ? 2.0
-                                              : (enc->raw_percent >= 10 ? 10.0 : (double) enc->raw_percent);
         int stop_by_prev = 0;
         while (k < nplanes && k * plane < zero_from) {
             const unsigned char *prev = k > 0 ? (enc->tmp + (k - 1) * plane) : NULL;
             int by_prev = 0;
-            if (pac_probe_plane(enc->tmp + k * plane, prev, plane, &by_prev) >= thresh) {
+            if (pac_probe_plane(enc->tmp + k * plane, prev, plane, &by_prev) >= 2.0) {
                 stop_by_prev = by_prev;
                 break;
             }
@@ -854,10 +795,9 @@ static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap,
             ns = pac_build(enc, enc->tmp, n, plane, zero_from, raw_bytes, &lits);
             {
                 unsigned char s0 = dst[pos - 2], s1 = dst[pos - 1];
-                ZSTD_CCtx *tc = pac_raw_literals(enc) ? enc->cctx_tail_raw : enc->cctx_tail;
                 if (cap - pos + 2 < ZSTD_FRAMEHEADERSIZE_MAX)
                     return 0;
-                r = ZSTD_compressSequences(tc, dst + pos - 2, cap - pos + 2,
+                r = ZSTD_compressSequences(enc->cctx_tail, dst + pos - 2, cap - pos + 2,
                                            enc->seq, ns, enc->tmp + raw_bytes, tail_bytes);
                 dst[pos - 2] = s0;
                 dst[pos - 1] = s1;
@@ -870,8 +810,7 @@ static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap,
     ns = pac_build(enc, enc->tmp, n, plane, zero_from, 0, &lits);
     if (lits == 1)
         return pac_write_zstd_rle_frame(dst, cap, n, enc->tmp[0]);
-    r = ZSTD_compressSequences(pac_raw_literals(enc) ? enc->cctx_raw : enc->cctx, dst, cap,
-                               enc->seq, ns, enc->tmp, n);
+    r = ZSTD_compressSequences(enc->cctx, dst, cap, enc->seq, ns, enc->tmp, n);
     return ZSTD_isError(r) ? 0 : r;
 }
 

@@ -20,7 +20,7 @@
 extern "C" {
 #endif
 
-#define PAC_VERSION "0.1.0"
+#define PAC_VERSION "0.2.0"
 
 /* block compressor of a chunk */
 #define PAC_LZ4 1
@@ -49,16 +49,6 @@ typedef int (*pac_transpose_fn)(char *out, const char *in, char *scratch, size_t
  * and can be used for any number of chunks.  NULL on failure. */
 pac_encoder *pac_create(int codec);
 void pac_free(pac_encoder *enc);
-
-/* Zstandard only, trades size for speed:
- * - On blocks >= 8192 bytes with bit planes >= 2048 bytes, leading
- *   incompressible bit planes (whose estimated saving is below
- *   max(2, min(10, percent)) %) are emitted as raw Zstd blocks (bt_raw)
- *   before compressing the remaining planes with sequences.
- * - For the remaining compressed planes, literals are stored raw when Huffman
- *   would save less than `percent` % of them (0: always Huffman on the suffix;
- *   100: always raw literals).  Default 0. */
-void pac_set_raw_literals(pac_encoder *enc, int percent);
 
 /* 1 (the default on x86, 0 elsewhere): when the upper bytes of every pixel of a block are zero
  * (uint32 counts below 65536, ...) only the lower bytes are transposed.

@@ -1,6 +1,6 @@
 /*
  * libFuzzer target for pac_compress_chunk, pac_bound, pac_set_narrow,
- * pac_set_raw_literals, and SIMD-vs-generic / narrow differential equivalence.
+ * and SIMD-vs-generic / narrow differential equivalence.
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Jon Wright, ESRF.
@@ -11,7 +11,7 @@ static pac_encoder *g_enc[2];
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    int ci, codec, narrow, isa, tight_cap, raw_percent, used_isa;
+    int ci, codec, narrow, isa, tight_cap, used_isa;
     size_t elem, block, cap_hint, raw_len, src_len, bound, n;
     unsigned char *src, *dst, *dec;
     pac_encoder *enc;
@@ -32,7 +32,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     narrow = (data[0] >> 3) & 1;
     isa = (int) ((data[0] >> 4) & 7);
     tight_cap = (data[0] >> 7) & 1;
-    raw_percent = (data[1] & 3) == 0 ? 0 : ((data[1] & 3) == 1 ? 100 : (int) (data[1] >> 2));
     block = fuzz_pick_block(data[2], data[3], elem, tight_cap);
     cap_hint = (size_t) data[4] | ((size_t) data[5] << 8);
 
@@ -68,7 +67,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         used_isa = 0;
     }
     pac_set_narrow(enc, narrow);
-    pac_set_raw_literals(enc, raw_percent);
 
     dst = (unsigned char *) malloc(bound);
     if (!dst) {

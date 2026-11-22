@@ -202,31 +202,35 @@ static void one_case(pac_encoder *enc[2], size_t elem, int pattern, size_t n, si
     const size_t size = n * elem;
     unsigned char *src = malloc(size + 1), *out = malloc(size + 1);
     size_t cap = pac_bound(size, elem, block), sblock;
-    unsigned char *chunk = malloc(cap + 64), *stock, *re;
-    int ci, narrow, raw;
+    unsigned char *chunk = malloc(cap + 64), *chunk0 = malloc(cap + 64), *stock, *re;
+    int ci, narrow;
     fill(src, n, elem, pattern);
     for (ci = 0; ci < 2; ci++) {
         const int codec = ci ? PAC_ZSTD : PAC_LZ4;
+        size_t c0 = 0;
         for (narrow = 0; narrow < 2; narrow++) {
-            for (raw = 0; raw < (ci ? 3 : 1); raw++) {
-                size_t c;
-                pac_set_narrow(enc[ci], narrow);
-                pac_set_raw_literals(enc[ci], raw == 0 ? 10 : (raw == 1 ? 0 : 100));
-                memset(chunk + cap, 0xA5, 64);
-                c = pac_compress_chunk(enc[ci], chunk, cap, src, size, elem, block);
-                checks++;
-                if (!c || c > cap || ref_decode(codec, chunk, c, elem, out, size) != (long) size ||
-                    memcmp(out, src, size) != 0)
-                    fail("compress", codec, elem, pattern, n, block, pac_isa(enc[ci]));
-                if (chunk[cap] != 0xA5 || chunk[cap + 63] != 0xA5)
-                    fail("wrote past dst", codec, elem, pattern, n, block, pac_isa(enc[ci]));
-                if (pac_compress_chunk(enc[ci], chunk, 11, src, size, elem, block) != 0)
-                    fail("accepted a dst of 11 bytes", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            size_t c;
+            pac_set_narrow(enc[ci], narrow);
+            memset(chunk + cap, 0xA5, 64);
+            c = pac_compress_chunk(enc[ci], chunk, cap, src, size, elem, block);
+            checks++;
+            if (!c || c > cap || ref_decode(codec, chunk, c, elem, out, size) != (long) size ||
+                memcmp(out, src, size) != 0)
+                fail("compress", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            if (chunk[cap] != 0xA5 || chunk[cap + 63] != 0xA5)
+                fail("wrote past dst", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            if (pac_compress_chunk(enc[ci], chunk, 11, src, size, elem, block) != 0)
+                fail("accepted a dst of 11 bytes", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            if (narrow == 0) {
+                c0 = c;
+                memcpy(chunk0, chunk, c);
+            } else if (c != c0 || memcmp(chunk, chunk0, c) != 0) {
+                fail("narrow mismatch", codec, elem, pattern, n, block, pac_isa(enc[ci]));
             }
         }
         pac_set_narrow(enc[ci], 1);
-        pac_set_raw_literals(enc[ci], 0); /* the default */
     }
+    free(chunk0);
     /* repack: stock chunks with blocks of block / m for m in 1, 2, 31 (when that divides) */
     {
         static const size_t ms[3] = {1, 2, 31};

@@ -66,15 +66,6 @@ static void write_seed_if_missing(const char *dir, int idx, const unsigned char 
     fclose(f);
 }
 
-static unsigned char encode_raw(int raw_percent)
-{
-    if (raw_percent <= 0)
-        return 0;
-    if (raw_percent >= 100)
-        return 1;
-    return (unsigned char) (((raw_percent & 0x3f) << 2) | 2);
-}
-
 static int elem_to_idx(size_t elem)
 {
     return elem == 1 ? 0 : (elem == 2 ? 1 : (elem == 4 ? 2 : 3));
@@ -86,7 +77,6 @@ struct repack_spec {
     size_t elem;
     int isa;
     int cap_mode;
-    int raw_percent;
     unsigned char b2;
     unsigned char b3;
     int zero_hdr_block;
@@ -101,7 +91,6 @@ struct compress_spec {
     int narrow;
     int isa;
     int tight_cap;
-    int raw_percent;
     unsigned char b2;
     unsigned char b3;
     unsigned char cap_lo;
@@ -119,37 +108,37 @@ static void generate_repack_seeds(const char *dir)
 {
     static const struct repack_spec specs[] = {
         /* 0..3: elem 1,2,4,8 basic roundtrips */
-        {PAC_LZ4,  PAC_ZSTD, 1, 0, 0,   0,  0, 0, 0,   8,    32, 0},
-        {PAC_ZSTD, PAC_LZ4,  2, 1, 0,   0,  1, 0, 0,  16,    64, 2},
-        {PAC_LZ4,  PAC_ZSTD, 4, 2, 0,  10,  2, 0, 0,  64,   256, 3},
-        {PAC_ZSTD, PAC_ZSTD, 8, 2, 0, 100,  2, 0, 0, 128,   512, 4},
+        {PAC_LZ4,  PAC_ZSTD, 1, 0, 0,  0, 0, 0,   8,    32, 0},
+        {PAC_ZSTD, PAC_LZ4,  2, 1, 0,  1, 0, 0,  16,    64, 2},
+        {PAC_LZ4,  PAC_ZSTD, 4, 2, 0,  2, 0, 0,  64,   256, 3},
+        {PAC_ZSTD, PAC_ZSTD, 8, 2, 0,  2, 0, 0, 128,   512, 4},
         /* 4..6: empty, tail-only (< 8*elem), and block + tail */
-        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,   0,  0, 0, 0,  16,     0, 0},
-        {PAC_ZSTD, PAC_LZ4,  4, 0, 0,   0,  0, 0, 0,  32,    12, 1},
-        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,   5,  1, 0, 0,  16,    38, 4},
+        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,  0, 0, 0,  16,     0, 0},
+        {PAC_ZSTD, PAC_LZ4,  4, 0, 0,  0, 0, 0,  32,    12, 1},
+        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,  1, 0, 0,  16,    38, 4},
         /* 7..10: multi-block regrouping sblock -> larger block with tail */
-        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,   0,  6, 0, 0,  64,  1040, 2},
-        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,  10,  6, 0, 1, 8192, 16400, 3}, /* detector sblock=0 default! */
-        {PAC_ZSTD, PAC_ZSTD, 4, 1, 0,   0,  4, 0, 0, 256,  2100, 5},
-        {PAC_ZSTD, PAC_LZ4,  1, 2, 0,   0,  5, 0, 0, 512,  8200, 4},
-        /* 11..15: large dense plane (>= 1024 bytes) to trigger Huffman/raw sampling & zstd block splitting */
-        {PAC_LZ4,  PAC_ZSTD, 1, 2, 0,   0,  6, 0, 1, 8192, 16384, 3},
-        {PAC_LZ4,  PAC_ZSTD, 1, 2, 0,  10,  6, 0, 1, 8192, 16384, 7},
-        {PAC_LZ4,  PAC_ZSTD, 1, 2, 0, 100,  6, 0, 1, 8192, 16384, 3},
-        {PAC_ZSTD, PAC_LZ4,  2, 0, 0,   0,  9, 0, 0, 8192, 57344, 6},
-        {PAC_LZ4,  PAC_ZSTD, 4, 2, 0,  10,  9, 0, 1, 8192, 57356, 2},
+        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,  6, 0, 0,  64,  1040, 2},
+        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,  6, 0, 1, 8192, 16400, 3}, /* detector sblock=0 default! */
+        {PAC_ZSTD, PAC_ZSTD, 4, 1, 0,  4, 0, 0, 256,  2100, 5},
+        {PAC_ZSTD, PAC_LZ4,  1, 2, 0,  5, 0, 0, 512,  8200, 4},
+        /* 11..15: large dense plane (>= 1024 bytes) & zstd block splitting */
+        {PAC_LZ4,  PAC_ZSTD, 1, 2, 0,  6, 0, 1, 8192, 16384, 3},
+        {PAC_LZ4,  PAC_ZSTD, 1, 2, 0,  6, 0, 1, 8192, 16384, 7},
+        {PAC_LZ4,  PAC_ZSTD, 1, 2, 0,  6, 0, 1, 8192, 16384, 3},
+        {PAC_ZSTD, PAC_LZ4,  2, 0, 0,  9, 0, 0, 8192, 57344, 6},
+        {PAC_LZ4,  PAC_ZSTD, 4, 2, 0,  9, 0, 1, 8192, 57356, 2},
         /* 16..20: cap_mode=1 (tight capacity) and arbitrary b2|0x80 block encodings */
-        {PAC_LZ4,  PAC_ZSTD, 2, 2, 1,   0,  0, 0, 0,  16,    64, 3},
-        {PAC_LZ4,  PAC_LZ4,  1, 1, 0,   0, 0x83, 0, 0, 32,   135, 7},
-        {PAC_ZSTD, PAC_ZSTD, 8, 2, 0,  15,  3, 0, 0, 128,  1032, 6},
-        {PAC_LZ4,  PAC_ZSTD, 2, 0, 0,   0,  4, 0, 0, 128,  2048, 1},
-        {PAC_ZSTD, PAC_LZ4,  4, 1, 0,   0,  5, 0, 0, 512,  8192, 5},
+        {PAC_LZ4,  PAC_ZSTD, 2, 2, 1,  0, 0, 0,  16,    64, 3},
+        {PAC_LZ4,  PAC_LZ4,  1, 1, 0, 0x83, 0, 0, 32,   135, 7},
+        {PAC_ZSTD, PAC_ZSTD, 8, 2, 0,  3, 0, 0, 128,  1032, 6},
+        {PAC_LZ4,  PAC_ZSTD, 2, 0, 0,  4, 0, 0, 128,  2048, 1},
+        {PAC_ZSTD, PAC_LZ4,  4, 1, 0,  5, 0, 0, 512,  8192, 5},
         /* 21..25: extra patterns & non-power-of-two multiples */
-        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0,   0, 0x82, 0, 0, 16,   500, 2},
-        {PAC_LZ4,  PAC_LZ4,  2, 0, 0,   0,  0, 0, 0,  16,    16, 1},
-        {PAC_ZSTD, PAC_ZSTD, 1, 2, 0,   0,  4, 0, 0,  64,  2051, 3},
-        {PAC_LZ4,  PAC_ZSTD, 8, 2, 1,  20,  2, 0, 0,  64,   520, 4},
-        {PAC_LZ4,  PAC_ZSTD, 4, 2, 0,   0,  6, 0, 1, 8192, 8192, 6}
+        {PAC_LZ4,  PAC_ZSTD, 2, 2, 0, 0x82, 0, 0, 16,   500, 2},
+        {PAC_LZ4,  PAC_LZ4,  2, 0, 0,  0, 0, 0,  16,    16, 1},
+        {PAC_ZSTD, PAC_ZSTD, 1, 2, 0,  4, 0, 0,  64,  2051, 3},
+        {PAC_LZ4,  PAC_ZSTD, 8, 2, 1,  2, 0, 0,  64,   520, 4},
+        {PAC_LZ4,  PAC_ZSTD, 4, 2, 0,  6, 0, 1, 8192, 8192, 6}
     };
     size_t i, nspecs = sizeof(specs) / sizeof(specs[0]);
 
@@ -184,7 +173,7 @@ static void generate_repack_seeds(const char *dir)
                                   ((elem_to_idx(sp->elem) & 3) << 2) |
                                   ((sp->isa & 7) << 4) |
                                   ((sp->cap_mode & 1) << 7));
-        hdr[1] = encode_raw(sp->raw_percent);
+        hdr[1] = 0;
         hdr[2] = sp->b2;
         hdr[3] = sp->b3;
         hdr[4] = sp->cap_mode ? 24 : 0;
@@ -200,35 +189,35 @@ static void generate_compress_seeds(const char *dir)
 {
     static const struct compress_spec specs[] = {
         /* 0..3: elem 1,2,4,8 basic coverage */
-        {PAC_ZSTD, 1, 0, 0, 0,   0,  0, 0, 0, 0,    32, 0},
-        {PAC_LZ4,  2, 1, 1, 0,   0,  1, 0, 0, 0,    64, 2},
-        {PAC_ZSTD, 4, 1, 2, 0,  10,  2, 0, 0, 0,   256, 3},
-        {PAC_ZSTD, 8, 1, 2, 0, 100,  2, 0, 0, 0,   512, 4},
+        {PAC_ZSTD, 1, 0, 0, 0,  0, 0, 0, 0,    32, 0},
+        {PAC_LZ4,  2, 1, 1, 0,  1, 0, 0, 0,    64, 2},
+        {PAC_ZSTD, 4, 1, 2, 0,  2, 0, 0, 0,   256, 3},
+        {PAC_ZSTD, 8, 1, 2, 0,  2, 0, 0, 0,   512, 4},
         /* 4..6: empty, tail-only, and block + tail */
-        {PAC_ZSTD, 2, 1, 2, 0,   0,  0, 0, 0, 0,     0, 0},
-        {PAC_LZ4,  4, 0, 0, 0,   0,  0, 0, 0, 0,    12, 1},
-        {PAC_ZSTD, 2, 1, 2, 0,   5,  1, 0, 0, 0,    38, 4},
+        {PAC_ZSTD, 2, 1, 2, 0,  0, 0, 0, 0,     0, 0},
+        {PAC_LZ4,  4, 0, 0, 0,  0, 0, 0, 0,    12, 1},
+        {PAC_ZSTD, 2, 1, 2, 0,  1, 0, 0, 0,    38, 4},
         /* 7..11: narrow SIMD pac_pack paths (elem=2 keep=1, elem=4 keep=1, elem=4 keep=2, elem=8) */
-        {PAC_ZSTD, 2, 1, 2, 0,   0,  4, 0, 0, 0,  1024, 5},
-        {PAC_ZSTD, 4, 1, 2, 0,   0,  4, 0, 0, 0,  1024, 5},
-        {PAC_ZSTD, 4, 1, 2, 0,   0,  5, 0, 0, 0,  4096, 6},
-        {PAC_ZSTD, 8, 1, 1, 0,  10,  5, 0, 0, 0,  4096, 6},
-        {PAC_ZSTD, 8, 1, 2, 0,   0,  5, 0, 0, 0,  4096, 5},
-        /* 12..15: dense >= 1024-byte plane for Huffman / raw decision & tight_cap check */
-        {PAC_ZSTD, 1, 0, 2, 0,   0,  6, 0, 0, 0, 16384, 3},
-        {PAC_ZSTD, 1, 0, 2, 1,  10,  6, 0, 7, 0, 16384, 7},
-        {PAC_ZSTD, 1, 0, 2, 0, 100,  6, 0, 0, 0, 16384, 3},
-        {PAC_LZ4,  2, 1, 2, 1,   0,  6, 0, 5, 0,  8202, 2},
+        {PAC_ZSTD, 2, 1, 2, 0,  4, 0, 0, 0,  1024, 5},
+        {PAC_ZSTD, 4, 1, 2, 0,  4, 0, 0, 0,  1024, 5},
+        {PAC_ZSTD, 4, 1, 2, 0,  5, 0, 0, 0,  4096, 6},
+        {PAC_ZSTD, 8, 1, 1, 0,  5, 0, 0, 0,  4096, 6},
+        {PAC_ZSTD, 8, 1, 2, 0,  5, 0, 0, 0,  4096, 5},
+        /* 12..15: dense >= 1024-byte plane & tight_cap check */
+        {PAC_ZSTD, 1, 0, 2, 0,  6, 0, 0, 0, 16384, 3},
+        {PAC_ZSTD, 1, 0, 2, 1,  6, 0, 7, 0, 16384, 7},
+        {PAC_ZSTD, 1, 0, 2, 0,  6, 0, 0, 0, 16384, 3},
+        {PAC_LZ4,  2, 1, 2, 1,  6, 0, 5, 0,  8202, 2},
         /* 16..18: invalid block / unaligned tail rejection tests (tight_cap=1) */
-        {PAC_ZSTD, 2, 1, 0, 1,   0, 14, 0, 0, 0,    64, 0},       /* block = 0 */
-        {PAC_LZ4,  4, 0, 2, 1,   0, 15, 0, 0, 0,    64, 4},       /* block = 8*elem+1 */
-        {PAC_ZSTD, 4, 1, 2, 1,   0,  0, 0, 0, 0xff, 63, 7},      /* unaligned size */
+        {PAC_ZSTD, 2, 1, 0, 1, 14, 0, 0, 0,    64, 0},       /* block = 0 */
+        {PAC_LZ4,  4, 0, 2, 1, 15, 0, 0, 0,    64, 4},       /* block = 8*elem+1 */
+        {PAC_ZSTD, 4, 1, 2, 1,  0, 0, 0, 0xff, 63, 7},      /* unaligned size */
         /* 19..23: large planes (idx 12/13) incl. LZ4 plane > 65535 & arbitrary b2|0x80 */
-        {PAC_LZ4,  1, 0, 2, 0,   0, 13, 0, 0, 0, 524288, 2},      /* 512k LZ4, plane=65536 > 65535 */
-        {PAC_ZSTD, 2, 1, 2, 0,  10,  9, 0, 0, 0,  57350, 3},
-        {PAC_ZSTD, 4, 0, 1, 0,   0, 0x85, 0, 0, 0, 1200, 7},
-        {PAC_LZ4,  8, 1, 0, 0,   0,  4, 0, 0, 0,  1024, 1},
-        {PAC_ZSTD, 2, 1, 2, 0,   0,  3, 0, 0, 0,   522, 4}
+        {PAC_LZ4,  1, 0, 2, 0, 13, 0, 0, 0, 524288, 2},      /* 512k LZ4, plane=65536 > 65535 */
+        {PAC_ZSTD, 2, 1, 2, 0,  9, 0, 0, 0,  57350, 3},
+        {PAC_ZSTD, 4, 0, 1, 0, 0x85, 0, 0, 0, 1200, 7},
+        {PAC_LZ4,  8, 1, 0, 0,  4, 0, 0, 0,  1024, 1},
+        {PAC_ZSTD, 2, 1, 2, 0,  3, 0, 0, 0,   522, 4}
     };
     size_t i, nspecs = sizeof(specs) / sizeof(specs[0]);
 
@@ -250,7 +239,7 @@ static void generate_compress_seeds(const char *dir)
                                   ((sp->narrow & 1) << 3) |
                                   ((sp->isa & 7) << 4) |
                                   ((sp->tight_cap & 1) << 7));
-        hdr[1] = encode_raw(sp->raw_percent);
+        hdr[1] = 0;
         hdr[2] = sp->b2;
         hdr[3] = sp->b3;
         hdr[4] = sp->cap_lo;

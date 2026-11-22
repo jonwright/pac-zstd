@@ -1,6 +1,6 @@
-"""pac zstd (raw literals 0, 5, 10 %; --raw for others) against stock bitshuffle-zstd at every zstd level.
+"""pac zstd against stock bitshuffle-zstd at every zstd level.
 
-    python3 bench/levels.py [--core K] [--out bench/results/levels.json] [--only CASE ...] [--raw 0,5,10]
+    python3 bench/levels.py [--core K] [--out bench/results/levels.json] [--only CASE ...]
     python3 bench/plot_levels.py                   # docs/levels.png, from that file
 
 Three files, each as uint16 and as uint32 (values cast, not rescaled; gaps as written), 248 kB
@@ -42,7 +42,6 @@ p.add_argument("--lib", default=os.path.join(HERE, "..", "build", "libpacbench.s
 p.add_argument("--out", default=os.path.join(HERE, "results", "levels.json"))
 p.add_argument("--core", type=int, default=None, help="pin to this core")
 p.add_argument("--only", nargs="*", help="only the cases whose name contains one of these")
-p.add_argument("--raw", default="0,5,10", help="pac_set_raw_literals percentages, comma separated")
 args = p.parse_args()
 if args.core is not None:
     if not hasattr(os, "sched_setaffinity"):
@@ -57,8 +56,6 @@ lib.pac_bound.restype = sz
 lib.pac_bound.argtypes = [sz, sz, sz]
 lib.pac_compress_chunk.restype = sz
 lib.pac_compress_chunk.argtypes = [vp, vp, sz, vp, sz, sz, sz]
-lib.pac_set_raw_literals.restype = None
-lib.pac_set_raw_literals.argtypes = [vp, ci]
 lib.pac_isa.restype = ctypes.c_char_p
 lib.pac_isa.argtypes = [vp]
 lib.ref_encode.restype = sz
@@ -148,13 +145,10 @@ for case in CASES:
         t_enc = best(lambda: [one(i) for i in range(n)], reps)
         return mb * 1e6 / sum(len(c) for c in packed), mb / t_enc
 
-    for pc in [int(x) for x in args.raw.split(",")]:
-        lib.pac_set_raw_literals(enc, pc)
-        one = lambda i: lib.pac_compress_chunk(enc, buf.ctypes.data, cap, raw[i].ctypes.data, fb, item, BLOCK)
-        ratio, e = measure(one, 3)
-        res["results"].append({"encoder": "pac zstd", "raw_percent": pc, "ratio": ratio, "enc_mbs": e})
-        print("%-16s %5d%% %9.3f %10.0f" % ("pac zstd", pc, ratio, e), flush=True)
-    lib.pac_set_raw_literals(enc, 0)
+    one = lambda i: lib.pac_compress_chunk(enc, buf.ctypes.data, cap, raw[i].ctypes.data, fb, item, BLOCK)
+    ratio, e = measure(one, 3)
+    res["results"].append({"encoder": "pac zstd", "ratio": ratio, "enc_mbs": e})
+    print("%-16s %6s %9.3f %10.0f" % ("pac zstd", "-", ratio, e), flush=True)
     for lv in LEVELS:
         one = lambda i: lib.ref_encode(ZSTD, lv, buf.ctypes.data, cap, raw[i].ctypes.data, fb, item, BLOCK)
         ratio, e = measure(one, 1 if lv >= 16 else 3)

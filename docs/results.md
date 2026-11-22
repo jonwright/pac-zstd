@@ -46,20 +46,6 @@ of uncompressed pixels (the raw data rate) on one core; every chunk decoded and 
 |  | stock zstd | 39 | 1.17 | 1.93 | 83.5 | 2.75 | 7.99 |
 |  | pac zstd | 41.7 | 1.27 | 2.61 | 100 | 4.44 | 7.26 |
 
-## Raw-literal threshold, pac zstd 248 kB (pac_set_raw_literals)
-
-| test case | 0 %: ratio | encode GB/s | 5 %: ratio | encode GB/s | 10 %: ratio | encode GB/s |
-|---|---:|---:|---:|---:|---:|---:|
-| thaumatin, gaps 65535 | 67.1 | 3.14 | 67.1 | 3.12 | 67.1 | 3.11 |
-| thaumatin, gaps 0 | 78.6 | 3.98 | 78.6 | 3.94 | 78.6 | 3.94 |
-| silicon, gaps 0 | 247 | 5.99 | 247 | 5.93 | 247 | 5.93 |
-| silicon, gaps 65535 | 147 | 4.03 | 147 | 4.01 | 147 | 4.00 |
-| CeO2 uint32, gaps 0 | 5.12 | 2.37 | 4.91 | 3.37 | 4.78 | 4.17 |
-| CeO2 uint32, gaps 2^32-1 | 5.09 | 2.12 | 4.89 | 2.85 | 4.74 | 3.50 |
-| CeO2 uint16, gaps 0 | 2.57 | 1.43 | 2.44 | 2.24 | 2.4 | 2.66 |
-| CeO2 uint16, gaps 65535 | 2.56 | 1.31 | 2.44 | 1.91 | 2.38 | 2.28 |
-| s3DXRD NMC811 uint32, gaps 65535 | 100 | 4.44 | 100 | 4.38 | 100 | 4.39 |
-
 ## Repack: stock lz4 with 8 kB blocks to zstd with 248 kB blocks, no bit transpose
 
 | test case | ratio lz4 8 kB | ratio zstd 248 kB | times smaller | raw GB/s | GB/s of lz4 read |

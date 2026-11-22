@@ -35,20 +35,9 @@ Ratio / encode GB/s per core:
 
 Plane-aware lz4 is the fastest encoder everywhere (1.1 to 1.5 times stock lz4 at 56 kB), but its
 ratio is 1 to 20 % below stock lz4, which also finds other repeats; with zstd the
-entropy coder makes up for that and more.  On dense frames plane-aware zstd has half the speed of
-the detector's lz4 for 11 to 14 % smaller files; raw literals buy the speed back:
-
-`pac_set_raw_literals` (plane-aware zstd, 248 kB; ratio / encode GB/s per core; no effect on the
-sparse cases):
-
-| | 0 % (default) | 5 % | 10 % |
-|---|---|---|---|
-| CeO2 uint32, gaps 0 | 5.12 / 2.37 | 4.91 / 3.37 | 4.78 / 4.17 |
-| CeO2 uint32, gaps 2^32-1 | 5.09 / 2.12 | 4.89 / 2.85 | 4.74 / 3.50 |
-| CeO2 uint16, gaps 0 | 2.57 / 1.43 | 2.44 / 2.24 | 2.40 / 2.66 |
-| CeO2 uint16, gaps 65535 | 2.56 / 1.31 | 2.44 / 1.91 | 2.38 / 2.28 |
-
-At 10 % the dense frames encode about as fast as the detector's lz4 and are still 4 to 5 % smaller.
+entropy coder makes up for that and more.  On dense frames plane-aware zstd automatically emits
+leading incompressible bit planes as raw Zstd blocks (`bt_raw`) to keep encode speed high while
+preserving the ratio on compressible planes.
 
 ## Gaps at zero or at the maximum, and empty frames
 
@@ -102,8 +91,7 @@ threads 46 to 94.
 bytes that cross it, the lz4 chunks:
 
 - dense frames (CeO2 uint32): 0.46 GB/s of lz4 per core, so about 7 cores keep up with 25 GbE
-  (measured: 3.7 GB/s on 8 threads) and about 40 with 100 GbE (10.0 GB/s on 32 threads); with
-  `pac_set_raw_literals(enc, 10)` 0.76 GB/s per core, 5 % larger output;
+  (measured: 3.7 GB/s on 8 threads) and about 40 with 100 GbE (10.0 GB/s on 32 threads);
 - sparse frames (thaumatin): 0.15 GB/s of lz4 per core, so about 21 cores for a 25 GbE link full of
   lz4 (measured: 3.2 GB/s on 32 threads).  A link full of 22-fold compressed frames is 69 GB/s of
   pixels, more than a detector delivers; counted in pixels, 1 core does 25 Gb/s and 4 cores
@@ -117,11 +105,8 @@ clipped).  One thread per row:
 |---|---|---|---|---|
 | silicon / 2 (sparse) | 155 | 1604 | 7.7 | 27.2 |
 | CeO2 / 2 (dense) | 1.37 | 1.53 | 0.86 | 3.4 |
-| CeO2 / 2, `--raw 5` | 1.37 | 1.46 | 1.22 | 4.8 |
-| CeO2 / 2, `--raw 10` | 1.37 | 1.40 | 1.57 | 6.2 |
 
-Sparse 8-bit frames need a single core.  Dense ones need about 6 cores at the default, or 4 with
-raw literals at 10 %, which keeps only 2 % of the gain over lz4.
+Sparse 8-bit frames need a single core; dense ones need about 6 cores (at the pre-hybrid baseline).
 
 **Compute for space**: per TB of lz4 on disk, thaumatin takes 1.9 core-hours and frees 0.68 TB;
 silicon 2.8 to 3.8 core-hours for 0.73 to 0.76 TB; the s3DXRD scan 2.3 core-hours for 0.67 TB;
@@ -173,6 +158,4 @@ A working prototype, measured on four public data sets.
   ppc64le in containers, MSVC 64 and 32 bit.
 - The tests are round trips over synthetic patterns, sizes and block sizes, and damaged input to
   the repack, also under the sanitizers.  No fuzzing campaign.
-- The optional raw-literal rule estimates Huffman's saving from one histogram for the whole block;
-  with a table per plane it saves more than that, which is why it costs ratio.
 - An all-zero frame costs more than with stock zstd (see the empty-frame table above).

@@ -26,33 +26,23 @@ on sparse ones it is faster than every level.
 ![pac zstd against every zstd level, compression ratio against encode speed](docs/levels.png)
 
 The dashed line is stock bitshuffle-zstd (kcb transpose, then `ZSTD_compressCCtx`) at every level from
--20 to 22; the diamonds are pac zstd with `pac_set_raw_literals` at 0, 5 and 10 % (and 25, 50 and
-100 % on CeO2).  248 kB blocks, one core, detector gaps set to 2^n-1.  The figure shows the uint16
-frames; uint32 gives the same picture and is in the table.  The speed axis is linear and starts at
-1/10 of the fastest encoder in each panel; the slower levels are in the table.
+-20 to 22; the diamond is pac zstd.  248 kB blocks, one core, detector gaps set to 2^n-1.  The
+figure shows the uint16 frames; uint32 gives the same picture and is in the table.  The speed axis
+is linear and starts at 1/10 of the fastest encoder in each panel; the slower levels are in the
+table.
 
-- **Dense frames (CeO2):** pac 0 % is smaller than every level: ratio 2.56 against 2.53 for levels
-  15 to 22 (uint16), at 1321 MB/s against 9 to 40 MB/s.
+- **Dense frames (CeO2):** pac is smaller than every level (ratio ~2.56 against 2.53 for levels 15
+  to 22 on uint16) while automatically emitting incompressible leading bit planes as raw Zstd
+  blocks (`bt_raw`) for high throughput.
 - **Sparse frames (silicon, thaumatin):** pac is faster than every level, 3300 to 5300 MB/s.  It is
   not the smallest: its ratio lies between levels 3 and 15, and level 22 is 4 to 21 % smaller at 7 to
-  27 MB/s.  Raw literals at 5 and 10 % change nothing there.
-- **Raw literals on CeO2:** 5 and 10 % trade 4 to 7 % of ratio for 1.3 to 1.8 times the speed.
-  25, 50 and 100 % give the same chunks as 10 %: at 10 % every literal block of these frames is
-  already stored raw.
-- **Negative levels** can be faster than pac 10 % on dense data.  For uint16 CeO2, levels -20 and
-  -5 run at 3068 and 2366 MB/s against 2317 MB/s, with ratios 12 and 3 % lower.  For uint32 CeO2,
-  level -20 is 2 % slower than pac 10 %, with a 26 % lower ratio.
+  27 MB/s.
 
 Cells are ratio, encode MB/s of pixels.
 
 | encoder | silicon uint16 | silicon uint32 | thaumatin uint16 | thaumatin uint32 | CeO2 uint16 | CeO2 uint32 |
 |---|---:|---:|---:|---:|---:|---:|
-| pac 0 % | 148, 4092 | 261, 5321 | 64.6, 3319 | 122, 4564 | 2.56, 1321 | 5.09, 2130 |
-| pac 5 % | 148, 4072 | 261, 5274 | 64.6, 3288 | 122, 4517 | 2.44, 1929 | 4.89, 2830 |
-| pac 10 % | 148, 4066 | 261, 5296 | 64.6, 3274 | 122, 4520 | 2.38, 2317 | 4.74, 3489 |
-| pac 25 % | - | - | - | - | 2.38, 2319 | 4.74, 3518 |
-| pac 50 % | - | - | - | - | 2.38, 2318 | 4.74, 3517 |
-| pac 100 % | - | - | - | - | 2.38, 2361 | 4.74, 3620 |
+| pac | 148, 4092 | 261, 5321 | 64.6, 3319 | 122, 4564 | 2.56, 1321 | 5.09, 2130 |
 | zstd -20 | 8.5, 3072 | 7.2, 3025 | 8.81, 2824 | 9.89, 3172 | 2.09, 3068 | 3.51, 3421 |
 | zstd -5 | 23.9, 2736 | 23.1, 2820 | 19.0, 2377 | 24.5, 2869 | 2.3, 2366 | 4.26, 2845 |
 | zstd -1 | 66.5, 2888 | 70.2, 3111 | 33.6, 2356 | 47.0, 2906 | 2.39, 2108 | 4.67, 2838 |
@@ -64,7 +54,7 @@ Cells are ratio, encode MB/s of pixels.
 | zstd 19 | 181, 31 | 324, 59 | 66.7, 22 | 129, 43 | 2.53, 14 | 5.04, 24 |
 | zstd 22 | 183, 14 | 329, 27 | 67.2, 7 | 130, 14 | 2.53, 9 | 5.04, 14 |
 
-Rerun: `python3 bench/levels.py --core N` (CeO2 with `--only CeO2 --raw 0,5,10,25,50,100`), then
+Rerun: `python3 bench/levels.py --core N`, then
 `python3 bench/plot_levels.py`; the numbers are in `bench/results/levels.json`.
 
 ## Transcoding detector files: lz4 (8 kB) to zstd (248 kB)
@@ -177,11 +167,10 @@ pac_free(enc);
 ```
 
 Options (each only trades speed against size; any reader reads the result):
-`pac_set_raw_literals(enc, percent)` skips Huffman coding of literals that would shrink less than
-`percent` %: 5 or 10 encode dense frames 1.4 to 1.9 times faster for 4 to 7 % of ratio.
-`pac_set_narrow` and `pac_set_transpose` control the bit transpose.  **[src/pac.h](src/pac.h) is
-the reference for every call.**  To build it into another code base, see
-[docs/build.md](docs/build.md).
+incompressible leading bit planes are automatically emitted as raw Zstd blocks (`bt_raw`) with no
+tuning knob needed.  `pac_set_narrow` and `pac_set_transpose` control the bit transpose.
+**[src/pac.h](src/pac.h) is the reference for every call.**  To build it into another code base,
+see [docs/build.md](docs/build.md).
 
 ## To do
 
@@ -194,8 +183,8 @@ the reference for every call.**  To build it into another code base, see
   master files) is the hard part.
 - **An entropy coder tuned to diffraction data.**  The literals left after the parse are bit
   planes of photon counts, close to Poisson statistics, plus Bragg peaks and rings.  Today zstd's
-  general-purpose Huffman stage is the price of the small files (the raw-literal option trades it
-  away).  A coder that knows the statistics (per-plane bit densities, neighbouring pixels, the
+  general-purpose Huffman stage is the price of the small files (leading incompressible planes
+  are stored raw as `bt_raw`).  A coder that knows the statistics (per-plane bit densities, neighbouring pixels, the
   previous frame) could be both smaller and faster; learning such a model from the large public
   archives of detector frames is an AI/ML project looking for funding.
 - **An entropy stage of our own for zstd**, in place of `ZSTD_compressSequences`.  On dense frames
