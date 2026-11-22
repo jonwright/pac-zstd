@@ -23,8 +23,8 @@ static PAC_INLINE unsigned pac_eq16_vsx(const unsigned char *a, const unsigned c
     static const unsigned char pick[16] = {120, 112, 104, 96, 88, 80, 72, 64, 56, 48, 40, 32, 24, 16, 8, 0};
     const __vector unsigned char c =
         (__vector unsigned char) vec_cmpeq(vec_vsx_ld(0, a), vec_vsx_ld(0, b));
-    const __vector unsigned long long r =
-        (__vector unsigned long long) vec_vbpermq(c, vec_vsx_ld(0, pick));
+    const __vector unsigned long r =
+        (__vector unsigned long) vec_vbpermq(c, vec_vsx_ld(0, pick));
     return (unsigned) vec_extract(r, 1);
 }
 #endif
