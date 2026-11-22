@@ -78,6 +78,11 @@ check-rfc: $(BUILD)/gen_compat_corpus $(BUILD)/check_rfc
 check-compat:
 	CC="$(CC)" bash tests/check_compat.sh
 
+# the full external-decoder version sweep (zstd 1.5.2..1.5.7 + dev HEAD, lz4 1.9.2..1.10.0 + dev HEAD).
+# downloads whole trees and uses the non-deterministic git HEADs, so it is meant to run OFFLINE only.
+check-compat-matrix:
+	CC="$(CC)" COMPAT_MATRIX=1 bash tests/check_compat.sh
+
 check: $(BUILD)/test_pac
 	$(BUILD)/test_pac
 
@@ -178,4 +183,4 @@ fuzz-coverage: build-fuzz/cov_repack build-fuzz/cov_compress build-fuzz/cov_seed
 clean:
 	rm -rf build build-asan build-cov build-fuzz build-compat
 
-.PHONY: all check check-c89 check-asan check-rfc check-compat coverage fuzz fuzz-build fuzz-replay fuzz-coverage clean
+.PHONY: all check check-c89 check-asan check-rfc check-compat check-compat-matrix coverage fuzz fuzz-build fuzz-replay fuzz-coverage clean
