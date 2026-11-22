@@ -18,6 +18,8 @@ jobs:
         run: make check-c89 CC=${{ matrix.cc }}
       - name: tests (every x86 kernel the runner has)
         run: make -j4 check CC=${{ matrix.cc }}
+      - name: RFC 8878 and LZ4 block spec checks
+        run: make -j4 check-rfc CC=${{ matrix.cc }}
       - name: tests under the sanitizers
         run: |
           make -j4 BUILD=build-asan CC=${{ matrix.cc }} PACFLAGS=-DPAC_VALIDATE_SEQUENCES \
@@ -110,3 +112,12 @@ jobs:
           cl /nologo /O2 /std:c11 /c /Fobuild\ third_party\kcb\src\bitshuffle.c || exit /b 1
           cl /nologo /O2 /W3 /Isrc /Ithird_party\zstd\lib /Ithird_party\lz4\lib tests\test_pac.c build\*.obj /Febuild\test_pac.exe || exit /b 1
           build\test_pac.exe 1 20 quick
+
+  # 2022+ decoder compatibility (bitshuffle 0.4.0 + zstd v1.5.2 + lz4 v1.9.3, lz4 v1.10.0) and clean-room Go decoders
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: make -j4 check-compat
