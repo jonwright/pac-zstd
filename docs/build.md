@@ -7,9 +7,11 @@ The API is documented in [src/pac.h](../src/pac.h); the README has an annotated 
     git submodule update --init
     make              # build/libpac.a and build/libpac.so, with lz4, zstd and kcb inside;
                       # build/libpacbench.so for the scripts in bench/
-    make check        # about 330000 round trips, on every instruction set this CPU has
+    make check        # about 300000 round trips, on every instruction set this CPU has
     build/test_pac 1 5 quick     # the same on small inputs only, for slow machines
     make check-c89    # src/pac.c as strict C89 and as C++98
+    make check-rfc    # validate emitted Zstd frames and LZ4 blocks
+    make check-compat # decode corpus against 2022+ bitshuffle/zstd/lz4 and Go decoders
     make check-asan   # the tests under the address and undefined-behaviour sanitizers
     make coverage     # line and branch coverage of src/ from tests/test_pac.c
     make fuzz         # libFuzzer on pac_repack_chunk and pac_compress_chunk (requires clang)
@@ -43,6 +45,17 @@ zstd:
   `zstd.h` with `ZSTD_STATIC_LINKING_ONLY` and needs `ZSTD_compressSequences`, explicit block
   delimiters and repcode resolution, which zstd keeps in its experimental API.  Tested with zstd
   1.5.7.
+- **lz4**: `lz4.h`, any version, used by the repack to decode the input.  Tested with 1.9.4.
+- **A bit transpose** with the signature of `bitshuf_encode_block` of
+  [kcb](https://github.com/kalcutter/bitshuffle): define `PAC_WITH_KCB` to use that one, or pass
+  your own with `pac_set_transpose()`.  `pac_repack_chunk` needs none.
+
+The source keeps to what old MSVC accepts: declarations first, no `inline` or `restrict` keywords
+(macros where they help), no `//` comments, 64-bit integers.  The SIMD kernels are compiled once
+per instruction set with target attributes (gcc, clang), as kcb does, and the encoder picks the
+best one the CPU has when it is created.  MSVC has no target attributes, so a `cl` build has only
+the SSE2 kernel, or the one `/arch` selects, which the whole binary then needs.  kcb has no NEON
+or VSX transpose: on those machines the bit transpose is its portable C code.
 
 ## Decoder compatibility floor
 
@@ -59,14 +72,3 @@ Written bitshuffle-zstd chunks target existing readers down to **bitshuffle 0.4.
 - **`zstd` CLI `<= v1.4.3` (fixed in `v1.4.4`, Nov 2019; CLI only, not `libzstd`):** rejects
   multi-block frames whose first block is a `131072`-byte `bt_rle` block (`should consume all input
   error`). `libzstd` of that era decodes them cleanly.
-- **lz4**: `lz4.h`, any version, used by the repack to decode the input.  Tested with 1.9.4.
-- **A bit transpose** with the signature of `bitshuf_encode_block` of
-  [kcb](https://github.com/kalcutter/bitshuffle): define `PAC_WITH_KCB` to use that one, or pass
-  your own with `pac_set_transpose()`.  `pac_repack_chunk` needs none.
-
-The source keeps to what old MSVC accepts: declarations first, no `inline` or `restrict` keywords
-(macros where they help), no `//` comments, 64-bit integers.  The SIMD kernels are compiled once
-per instruction set with target attributes (gcc, clang), as kcb does, and the encoder picks the
-best one the CPU has when it is created.  MSVC has no target attributes, so a `cl` build has only
-the SSE2 kernel, or the one `/arch` selects, which the whole binary then needs.  kcb has no NEON
-or VSX transpose: on those machines the bit transpose is its portable C code.
