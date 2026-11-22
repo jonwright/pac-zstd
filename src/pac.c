@@ -164,7 +164,8 @@ static PAC_INLINE unsigned pac_popcount32(pac_u32 x)
 /* the parse, once per instruction set (pac_parse.inl)                 */
 
 typedef size_t (*pac_parse_fn)(const unsigned char *PAC_RESTRICT base, size_t from, size_t to,
-                               size_t plane, ZSTD_Sequence *PAC_RESTRICT seq, size_t *lit);
+                               size_t plane, ZSTD_Sequence *PAC_RESTRICT seq, size_t *lit,
+                               size_t *matched_out);
 
 #define PAC_ISA 0
 #define PAC_NAME(x) pac_##x##_generic
@@ -575,7 +576,7 @@ static size_t pac_build(pac_encoder *enc, const unsigned char *s, size_t n, size
     const size_t use_plane = !(enc->codec == PAC_LZ4 && plane > 65535);
     for (from = start_from; from < n; from += piece) {
         size_t to = from + piece < n ? from + piece : n;
-        size_t lit0 = lit, l = lit, k, q, lits = 0;
+        size_t lit0 = lit, l = lit, k, lits, matched = 0;
         int dense;
         if (from > zero_from && to - from >= 4) { /* zeros after zeros: one run, nothing to scan */
             seq[ns].litLength = (unsigned) lit;
@@ -584,13 +585,12 @@ static size_t pac_build(pac_encoder *enc, const unsigned char *s, size_t n, size
             seq[ns].rep = 0;
             k = 1;
             l = 0;
+            matched = to - from;
         } else {
             size_t dist = (use_plane && from - start_from >= plane) ? plane : 0;
-            k = enc->parse(s + start_from, from - start_from, to - start_from, dist, seq + ns, &l);
+            k = enc->parse(s + start_from, from - start_from, to - start_from, dist, seq + ns, &l, &matched);
         }
-        for (q = 0; q < k; q++)
-            lits += seq[ns + q].litLength;
-        lits += l - lit0; /* the literals of this piece only */
+        lits = (to - from) - matched;
         /* its own Huffman table only pays for a plane of some size */
         dense = to - from >= 1024 && lits * 20 > to - from;
         if (zblock && (alone || dense || zblock + (to - from) > ZSTD_BLOCKSIZE_MAX)) {

@@ -149,7 +149,8 @@ PAC_TARGET static PAC_INLINE size_t PAC_NAME(match_len)(const unsigned char *a,
  * equal bytes) and, if plane != 0, at offset `plane` (the same bytes as the
  * bit plane before); where both start at the same byte the longer is taken.
  * Nothing else is searched.  Sequences are appended at seq; *lit is the
- * number of literal bytes pending before the next match, in and out.
+ * number of literal bytes pending before the next match, in and out;
+ * *matched_out receives the sum of match lengths emitted in [from..to).
  * Returns the number of sequences added.
  *
  * base[to .. to + 63] must be readable (the content does not matter), and
@@ -158,46 +159,134 @@ PAC_TARGET static PAC_INLINE size_t PAC_NAME(match_len)(const unsigned char *a,
 PAC_TARGET PAC_NOINLINE static size_t PAC_NAME(parse)(const unsigned char *PAC_RESTRICT base,
                                                        size_t from, size_t to, size_t plane,
                                                        ZSTD_Sequence *PAC_RESTRICT seq,
-                                                       size_t *lit)
+                                                       size_t *lit, size_t *matched_out)
 {
     const unsigned char *end = base + to;
-    size_t i = from, lit_start = from - *lit, n = 0;
+    size_t i = from, lit_start = from - *lit, n = 0, matched = 0;
     if (i == 0)
         i = 1; /* nothing before the first byte */
-    while (i < to) {
-        size_t left = to - i, j, pos, l1, lp;
-        pac_u64 valid = left >= 64 ? ~(pac_u64) 0 : (((pac_u64) 1 << left) - 1);
-        pac_u64 c1 = PAC_NAME(eq64)(base + i, 1) & valid;
-        pac_u64 cp = plane ? PAC_NAME(eq64)(base + i, plane) & valid : 0;
-        pac_u64 c;
-        /* bit k: bits k .. k + 3 are set, i.e. a match of 4 starts at k */
-        c1 &= c1 >> 1;
-        c1 &= c1 >> 2;
-        cp &= cp >> 1;
-        cp &= cp >> 2;
-        c = c1 | cp;
-        if (!c) {
-            i += left >= 64 ? 61 : left; /* a match may start in the last 3 bytes of the window */
-            continue;
+    if (plane == 0) {
+        while (i < to) {
+            size_t left = to - i;
+            pac_u64 valid = left >= 64 ? ~(pac_u64) 0 : (((pac_u64) 1 << left) - 1);
+            pac_u64 e1 = PAC_NAME(eq64)(base + i, 1) & valid;
+            pac_u64 c1 = e1 & (e1 >> 1);
+            c1 &= c1 >> 2;
+            if (!c1) {
+                i += left >= 64 ? 61 : left; /* a match may start in the last 3 bytes of the window */
+                continue;
+            }
+            for (;;) {
+                size_t j = (size_t) pac_ctz64(c1);
+                size_t pos = i + j;
+                pac_u64 rem1 = ~(e1 >> j);
+                size_t l1 = rem1 ? (size_t) pac_ctz64(rem1) : (64 - j);
+                size_t next_k;
+                if (j + l1 == 64 && left > 64)
+                    l1 += PAC_NAME(match_len)(base + i + 64, base + i + 63, end);
+                seq[n].litLength = (unsigned) (pos - lit_start);
+                seq[n].rep = 0;
+                seq[n].offset = 1;
+                seq[n].matchLength = (unsigned) l1;
+                n++;
+                matched += l1;
+                next_k = j + l1;
+                lit_start = i + next_k;
+                if (left < 64) {
+                    if (next_k >= left) {
+                        i = to;
+                        break;
+                    }
+                    c1 &= (~(pac_u64) 0) << next_k;
+                    if (!c1) {
+                        i = to;
+                        break;
+                    }
+                } else {
+                    if (next_k >= 61) {
+                        i += next_k;
+                        break;
+                    }
+                    c1 &= (~(pac_u64) 0) << next_k;
+                    if (!c1) {
+                        i += 61;
+                        break;
+                    }
+                }
+            }
         }
-        j = (size_t) pac_ctz64(c);
-        pos = i + j;
-        l1 = (c1 >> j) & 1 ? PAC_NAME(match_len)(base + pos, base + pos - 1, end) : 0;
-        lp = (cp >> j) & 1 ? PAC_NAME(match_len)(base + pos, base + pos - plane, end) : 0;
-        seq[n].litLength = (unsigned) (pos - lit_start);
-        seq[n].rep = 0;
-        if (l1 >= lp) {
-            seq[n].offset = 1;
-            seq[n].matchLength = (unsigned) l1;
-            i = pos + l1;
-        } else {
-            seq[n].offset = (unsigned) plane;
-            seq[n].matchLength = (unsigned) lp;
-            i = pos + lp;
+    } else {
+        while (i < to) {
+            size_t left = to - i;
+            pac_u64 valid = left >= 64 ? ~(pac_u64) 0 : (((pac_u64) 1 << left) - 1);
+            pac_u64 e1 = PAC_NAME(eq64)(base + i, 1) & valid;
+            pac_u64 ep = PAC_NAME(eq64)(base + i, plane) & valid;
+            pac_u64 c1 = e1 & (e1 >> 1);
+            pac_u64 cp = ep & (ep >> 1);
+            pac_u64 c;
+            c1 &= c1 >> 2;
+            cp &= cp >> 2;
+            c = c1 | cp;
+            if (!c) {
+                i += left >= 64 ? 61 : left;
+                continue;
+            }
+            for (;;) {
+                size_t j = (size_t) pac_ctz64(c);
+                size_t pos = i + j;
+                size_t l1 = 0, lp = 0, best_l, next_k;
+                if ((c1 >> j) & 1) {
+                    pac_u64 rem1 = ~(e1 >> j);
+                    l1 = rem1 ? (size_t) pac_ctz64(rem1) : (64 - j);
+                    if (j + l1 == 64 && left > 64)
+                        l1 += PAC_NAME(match_len)(base + i + 64, base + i + 63, end);
+                }
+                if ((cp >> j) & 1) {
+                    pac_u64 remp = ~(ep >> j);
+                    lp = remp ? (size_t) pac_ctz64(remp) : (64 - j);
+                    if (j + lp == 64 && left > 64)
+                        lp += PAC_NAME(match_len)(base + i + 64, base + i + 64 - plane, end);
+                }
+                seq[n].litLength = (unsigned) (pos - lit_start);
+                seq[n].rep = 0;
+                if (l1 >= lp) {
+                    seq[n].offset = 1;
+                    seq[n].matchLength = (unsigned) l1;
+                    best_l = l1;
+                } else {
+                    seq[n].offset = (unsigned) plane;
+                    seq[n].matchLength = (unsigned) lp;
+                    best_l = lp;
+                }
+                n++;
+                matched += best_l;
+                next_k = j + best_l;
+                lit_start = i + next_k;
+                if (left < 64) {
+                    if (next_k >= left) {
+                        i = to;
+                        break;
+                    }
+                    c &= (~(pac_u64) 0) << next_k;
+                    if (!c) {
+                        i = to;
+                        break;
+                    }
+                } else {
+                    if (next_k >= 61) {
+                        i += next_k;
+                        break;
+                    }
+                    c &= (~(pac_u64) 0) << next_k;
+                    if (!c) {
+                        i += 61;
+                        break;
+                    }
+                }
+            }
         }
-        n++;
-        lit_start = i;
     }
     *lit = to - lit_start;
+    *matched_out = matched;
     return n;
 }
