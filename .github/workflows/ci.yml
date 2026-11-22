@@ -83,7 +83,7 @@ jobs:
       - run: |
           docker run --rm --platform ${{ matrix.platform }} -v "$PWD":/w -w /w debian:bookworm bash -c "
             apt-get update -qq && apt-get install -y -qq build-essential >/dev/null &&
-            uname -m && make -j4 CFLAGS=-O2 build/test_pac && build/test_pac 1 5 quick"
+            uname -m && make check-c89 && make -j4 CFLAGS=-O2 build/test_pac && build/test_pac 1 5 quick"
 
   # MSVC (the current one on the runner), 64 and 32 bit: src/pac.c compiled as C, which for cl is
   # close to the C89 subset the source keeps to.  Only the SSE2 kernel is built (no target
