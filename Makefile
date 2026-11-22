@@ -61,6 +61,23 @@ $(BUILD)/libpacbench.so: bench/ref_codec.c $(BUILD)/pac.o $(DEP_OBJ)
 $(BUILD)/test_pac: tests/test_pac.c $(BUILD)/libpac.a
 	$(CC) $(CFLAGS) $(WARN) $(LDFLAGS) -Isrc $(INC) $< $(BUILD)/libpac.a -o $@ -lm
 
+$(BUILD)/gen_compat_corpus: tests/gen_compat_corpus.c tests/compat_format.h $(BUILD)/libpac.a
+	$(CC) $(CFLAGS) $(WARN) $(LDFLAGS) -Isrc $(INC) $< $(BUILD)/libpac.a -o $@ -lm
+
+$(BUILD)/edu_zstd.o: $(TP)/zstd/doc/educational_decoder/zstd_decompress.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -std=c99 -DZDEC_NO_DICTIONARY -DZDEC_NO_MESSAGE -I$(TP)/zstd/doc/educational_decoder -c $< -o $@
+
+$(BUILD)/check_rfc: tests/check_rfc.c tests/compat_format.h $(BUILD)/edu_zstd.o $(BUILD)/kcb.o
+	$(CC) $(CFLAGS) $(WARN) $(LDFLAGS) -std=c99 -I$(TP)/zstd/doc/educational_decoder $< $(BUILD)/edu_zstd.o $(BUILD)/kcb.o -o $@ -lm
+
+check-rfc: $(BUILD)/gen_compat_corpus $(BUILD)/check_rfc
+	$(BUILD)/gen_compat_corpus $(BUILD)/compat_corpus.bin
+	$(BUILD)/check_rfc $(BUILD)/compat_corpus.bin
+
+check-compat:
+	CC="$(CC)" bash tests/check_compat.sh
+
 check: $(BUILD)/test_pac
 	$(BUILD)/test_pac
 
@@ -159,6 +176,6 @@ fuzz-coverage: build-fuzz/cov_repack build-fuzz/cov_compress build-fuzz/cov_seed
 	@echo "HTML report: build-fuzz/coverage/index.html"
 
 clean:
-	rm -rf build build-asan build-cov build-fuzz
+	rm -rf build build-asan build-cov build-fuzz build-compat
 
-.PHONY: all check check-c89 check-asan coverage fuzz fuzz-build fuzz-replay fuzz-coverage clean
+.PHONY: all check check-c89 check-asan check-rfc check-compat coverage fuzz fuzz-build fuzz-replay fuzz-coverage clean
