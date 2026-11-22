@@ -321,6 +321,10 @@ struct pac_encoder {
     unsigned char *scratch; /* for the transpose; a decoded source block in pac_repack_chunk */
     unsigned char *pack;    /* the lower bytes of the pixels of a block */
     ZSTD_Sequence *seq;
+    /* per-plane invariance bitmasks from the narrow scan (bit p = plane p) */
+    pac_u64 plane_zero;
+    pac_u64 plane_one;
+    pac_u64 plane_eq;
 };
 
 #if defined(PAC_WITH_KCB)
@@ -707,12 +711,12 @@ static double pac_probe_plane(const unsigned char *p, const unsigned char *prev,
  * Parse the transposed block s[start_from..n), bit planes of `plane` bytes, into
  * enc->seq in zstd's form with explicit block delimiters: a plane of at
  * least 1024 bytes that is more than 1/20 literals gets a zstd block of its
- * own (its own Huffman table), the others are grouped up to zstd's block size.  The planes from
- * byte zero_from on are known to be all zero.  Returns the number of
- * sequences; *lits_out = the literal bytes.
+ * own (its own Huffman table), the others are grouped up to zstd's block size.
+ * enc->plane_{zero,one,eq} mark invariant planes to skip scanning.  Returns the
+ * number of sequences; *lits_out = the literal bytes.
  */
 static size_t pac_build(pac_encoder *enc, const unsigned char *s, size_t n, size_t plane,
-                        size_t zero_from, size_t start_from, size_t *lits_out)
+                        size_t start_from, size_t *lits_out)
 {
     ZSTD_Sequence *seq = enc->seq;
     size_t ns = 0, block_seq_start = 0, lit = 0, zblock = 0, total = 0, from;
@@ -723,16 +727,36 @@ static size_t pac_build(pac_encoder *enc, const unsigned char *s, size_t n, size
     for (from = start_from; from < n; from += piece) {
         size_t to = from + piece < n ? from + piece : n;
         size_t lit0 = lit, l = lit, k, lits, matched = 0;
-        int dense;
-        if (from > zero_from && to - from >= 4) { /* zeros after zeros: one run, nothing to scan */
-            seq[ns].litLength = (unsigned) lit;
-            seq[ns].matchLength = (unsigned) (to - from);
-            seq[ns].offset = 1;
-            seq[ns].rep = 0;
-            k = 1;
-            l = 0;
-            matched = to - from;
-        } else {
+        size_t p_idx = from / plane;
+        int dense, skipped = 0;
+        if (p_idx > 0 && from > start_from && (to - 1) / plane == p_idx && p_idx < 64 &&
+            to - from >= 4) {
+            pac_u64 pbit = (pac_u64) 1 << p_idx;
+            int is_z = (enc->plane_zero & pbit) != 0;
+            int is_o = (enc->plane_one & pbit) != 0;
+            int is_eq = (enc->plane_eq & pbit) != 0;
+            if ((is_z && ((enc->plane_zero >> (p_idx - 1)) & 1)) ||
+                (is_o && ((enc->plane_one >> (p_idx - 1)) & 1))) {
+                seq[ns].litLength = (unsigned) lit;
+                seq[ns].matchLength = (unsigned) (to - from);
+                seq[ns].offset = 1;
+                seq[ns].rep = 0;
+                k = 1;
+                l = 0;
+                matched = to - from;
+                skipped = 1;
+            } else if (use_plane && is_eq && from - start_from >= plane && s[from] != s[from - 1]) {
+                seq[ns].litLength = (unsigned) lit;
+                seq[ns].matchLength = (unsigned) (to - from);
+                seq[ns].offset = (unsigned) plane;
+                seq[ns].rep = 0;
+                k = 1;
+                l = 0;
+                matched = to - from;
+                skipped = 1;
+            }
+        }
+        if (!skipped) {
             size_t dist = (use_plane && from - start_from >= plane) ? plane : 0;
             k = enc->parse(s + start_from, from - start_from, to - start_from, dist, seq + ns, &l, &matched);
         }
@@ -892,22 +916,27 @@ static int pac_ensure_wl(pac_encoder *enc, size_t n)
 /* One transposed block (in enc->tmp, n bytes, planes of `plane` bytes) to
  * one LZ4 block or zstd frame.  Returns the size, 0 on error. */
 static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap, size_t n,
-                               size_t plane, size_t zero_from)
+                               size_t plane)
 {
     size_t lits, ns, r;
+    const size_t nplanes = n / plane;
+    const pac_u64 nmask = nplanes >= 64 ? ~(pac_u64) 0 : (((pac_u64) 1 << nplanes) - 1);
     if (enc->codec == PAC_LZ4) {
-        ns = pac_build(enc, enc->tmp, n, plane, zero_from, 0, &lits);
+        ns = pac_build(enc, enc->tmp, n, plane, 0, &lits);
         return pac_emit_lz4(enc->seq, ns, enc->tmp, n, dst, cap);
     }
     if (cap < ZSTD_FRAMEHEADERSIZE_MAX)
         return 0; /* zstd 1.5.7 ZSTD_compressSequences omits FORWARD_IF_ERROR on ZSTD_writeFrameHeader */
+    if (plane >= 5 && (enc->plane_zero & nmask) == nmask)
+        return pac_write_zstd_rle_frame(dst, cap, n, 0x00);
+    if (plane >= 5 && (enc->plane_one & nmask) == nmask)
+        return pac_write_zstd_rle_frame(dst, cap, n, 0xff);
     if (!pac_ensure_wl(enc, n)) /* the window must reach one plane back, whatever zstd would pick */
         return 0;
-    if (n >= 8192 && plane >= 2048 && zero_from > 0) {
-        const size_t nplanes = n / plane;
+    if (n >= 8192 && plane >= 2048) {
         size_t k = 0;
         int stop_by_prev = 0;
-        while (k < nplanes && k * plane < zero_from) {
+        while (k < nplanes) {
             const unsigned char *prev = k > 0 ? (enc->tmp + (k - 1) * plane) : NULL;
             int by_prev = 0;
             if (pac_probe_plane(enc->tmp + k * plane, prev, plane, &by_prev) >= 2.0) {
@@ -938,7 +967,7 @@ static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap,
             }
             if (tail_bytes == 0)
                 return pos;
-            ns = pac_build(enc, enc->tmp, n, plane, zero_from, raw_bytes, &lits);
+            ns = pac_build(enc, enc->tmp, n, plane, raw_bytes, &lits);
             {
                 unsigned char s0 = dst[pos - 2], s1 = dst[pos - 1];
                 if (cap - pos + 2 < ZSTD_FRAMEHEADERSIZE_MAX)
@@ -953,7 +982,7 @@ static size_t pac_encode_block(pac_encoder *enc, unsigned char *dst, size_t cap,
             }
         }
     }
-    ns = pac_build(enc, enc->tmp, n, plane, zero_from, 0, &lits);
+    ns = pac_build(enc, enc->tmp, n, plane, 0, &lits);
     if (lits == 1)
         return pac_write_zstd_rle_frame(dst, cap, n, enc->tmp[0]);
     r = ZSTD_compressSequences(enc->cctx, dst, cap, enc->seq, ns, enc->tmp, n);
@@ -1001,17 +1030,18 @@ static void pac_pack(unsigned char *PAC_RESTRICT out, const unsigned char *PAC_R
  * The bit transpose of n elements of elem bytes into enc->tmp.  When
  * enc->narrow is enabled on elem > 1 (little endian), scans for all-zero,
  * all-one, and eq-previous planes, transposes only the active lower bytes,
- * and materializes invariant upper planes into enc->tmp.  Returns the byte
- * offset from which trailing planes are all zero (at least `plane` if the
- * whole block is zero), 0 on error.
+ * materializes invariant upper planes into enc->tmp, and records
+ * enc->plane_{zero,one,eq}.  Returns 1 on success, 0 on error.
  */
-static size_t pac_transpose(pac_encoder *enc, const unsigned char *in, size_t n, size_t elem)
+static int pac_transpose(pac_encoder *enc, const unsigned char *in, size_t n, size_t elem)
 {
-    size_t keep = elem, trail_zero = 0;
+    size_t keep = elem;
     const size_t nplanes = 8 * elem;
     const size_t plane = n / 8;
     const int use_eq = !(enc->codec == PAC_LZ4 && plane > 65535);
-    pac_u64 p_zero = 0, p_one = 0, p_eq = 0;
+    enc->plane_zero = 0;
+    enc->plane_one = 0;
+    enc->plane_eq = 0;
     if (enc->narrow && elem > 1 && PAC_LITTLE_ENDIAN) {
         pac_u64 vo = 0, va = 0, vd = 0;
         const pac_u64 nmask = elem == 8 ? ~(pac_u64) 0 : (((pac_u64) 1 << nplanes) - 1);
@@ -1019,26 +1049,21 @@ static size_t pac_transpose(pac_encoder *enc, const unsigned char *in, size_t n,
         pac_scan_invariance(enc->isa, in, n, elem, &vo, &va, &vd);
         for (p = 0; p < nplanes; p++) {
             if (((vo >> p) & 1) == 0)
-                p_zero |= ((pac_u64) 1 << p);
+                enc->plane_zero |= ((pac_u64) 1 << p);
             else if (((va >> p) & 1) == 1)
-                p_one |= ((pac_u64) 1 << p);
+                enc->plane_one |= ((pac_u64) 1 << p);
             else if (p > 0 && use_eq && ((vd >> (p - 1)) & 1) == 0)
-                p_eq |= ((pac_u64) 1 << p);
+                enc->plane_eq |= ((pac_u64) 1 << p);
         }
         if (vo == 0 || va == nmask) {
-            memset(enc->tmp, vo == 0 ? 0 : 0xff, n * elem);
-            return vo == 0 ? plane : n * elem;
+            if (enc->codec == PAC_LZ4 || plane < 5)
+                memset(enc->tmp, vo == 0 ? 0 : 0xff, n * elem);
+            return 1;
         }
         for (p = nplanes - 1; p > 0; p--) {
             pac_u64 pbit = (pac_u64) 1 << p;
-            if ((p_zero | p_one | p_eq) & pbit)
+            if ((enc->plane_zero | enc->plane_one | enc->plane_eq) & pbit)
                 trail++;
-            else
-                break;
-        }
-        for (p = nplanes - 1; p > 0; p--) {
-            if (p_zero & ((pac_u64) 1 << p))
-                trail_zero++;
             else
                 break;
         }
@@ -1056,15 +1081,15 @@ static size_t pac_transpose(pac_encoder *enc, const unsigned char *in, size_t n,
         size_t p;
         for (p = 8 * keep; p < nplanes; p++) {
             pac_u64 pbit = (pac_u64) 1 << p;
-            if (p_zero & pbit)
+            if (enc->plane_zero & pbit)
                 memset(enc->tmp + p * plane, 0, plane);
-            else if (p_one & pbit)
+            else if (enc->plane_one & pbit)
                 memset(enc->tmp + p * plane, 0xff, plane);
             else
                 memcpy(enc->tmp + p * plane, enc->tmp + (p - 1) * plane, plane);
         }
     }
-    return (nplanes - trail_zero) * plane;
+    return 1;
 }
 
 static int pac_args_ok(size_t elem_size, size_t block_size)
@@ -1107,10 +1132,10 @@ size_t pac_compress_chunk(pac_encoder *enc, void *dst_, size_t cap, const void *
         size_t b = size - done < block ? size - done : block;
         size_t left = b % (PAC_MULT * elem), nb = b - left;
         if (nb) {
-            size_t nonzero = pac_transpose(enc, src + done, nb / elem, elem), c;
-            if (!nonzero || cap - n < 4)
+            size_t c;
+            if (!pac_transpose(enc, src + done, nb / elem, elem) || cap - n < 4)
                 return 0;
-            c = pac_encode_block(enc, dst + n + 4, cap - n - 4, nb, nb / (8 * elem), nonzero);
+            c = pac_encode_block(enc, dst + n + 4, cap - n - 4, nb, nb / (8 * elem));
             if (!c)
                 return 0;
             pac_put_be(dst + n, (pac_u64) c, 4);
@@ -1162,6 +1187,9 @@ size_t pac_repack_chunk(pac_encoder *enc, void *dst_, size_t cap, const void *sr
         if (nb) {
             const size_t plane = nb / nplanes;
             size_t filled = 0, remaining = nb, c;
+            enc->plane_zero = 0;
+            enc->plane_one = 0;
+            enc->plane_eq = 0;
             while (remaining) { /* the source blocks of this block: decode, regroup the planes */
                 size_t sb = remaining < sblock ? remaining : sblock, csize, got, p, k;
                 unsigned char *out = sb == nb ? enc->tmp : enc->scratch;
@@ -1191,7 +1219,7 @@ size_t pac_repack_chunk(pac_encoder *enc, void *dst_, size_t cap, const void *sr
             }
             if (cap - n < 4)
                 return 0;
-            c = pac_encode_block(enc, dst + n + 4, cap - n - 4, nb, plane, nb);
+            c = pac_encode_block(enc, dst + n + 4, cap - n - 4, nb, plane);
             if (!c)
                 return 0;
             pac_put_be(dst + n, (pac_u64) c, 4);

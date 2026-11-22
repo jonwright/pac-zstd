@@ -446,6 +446,21 @@ int main(int argc, char **argv)
             fail("large block plane > 128kB", PAC_ZSTD, 2, 0, n, blk, pac_isa(enc));
         if (pc0 != pc1 || memcmp(p0, p1, pc1) != 0)
             fail("large block narrow mismatch", PAC_ZSTD, 2, 0, n, blk, pac_isa(enc));
+        /* planes 0..1 all zero, plane 2 non-zero: catches plane-straddling shortcut */
+        for (i = 0; i < n; i++) {
+            uint16_t v = (uint16_t) (((i & 127) << 2) | ((i & 31) == 0 ? 0xfffcU : 0U));
+            memcpy(src + 2 * i, &v, 2);
+        }
+        pac_set_narrow(enc, 0);
+        pc0 = pac_compress_chunk(enc, p0, cap, src, blk, 2, blk);
+        pac_set_narrow(enc, 1);
+        pc1 = pac_compress_chunk(enc, p1, cap, src, blk, 2, blk);
+        checks += 2;
+        if (!pc1 || pc1 > cap || ref_decode(PAC_ZSTD, p1, pc1, 2, out, blk) != (long) blk ||
+            memcmp(out, src, blk) != 0)
+            fail("large block zero-prefix plane > 128kB", PAC_ZSTD, 2, 0, n, blk, pac_isa(enc));
+        if (pc0 != pc1 || memcmp(p0, p1, pc1) != 0)
+            fail("large block zero-prefix narrow mismatch", PAC_ZSTD, 2, 0, n, blk, pac_isa(enc));
         free(src);
         free(out);
         free(p0);
