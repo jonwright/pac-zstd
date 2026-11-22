@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Jon Wright, ESRF.  Code written by Claude Fable 5.2.
  */
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,16 +129,20 @@ static size_t stock_encode(int codec, unsigned char *dst, const unsigned char *s
     return n;
 }
 
-#define NPATTERNS 9
+#define NPATTERNS 10
 static const char *const pattern_names[NPATTERNS] = {
     "zeros", "all ones", "noise", "sparse photons", "dense counts", "sparse + saturated gaps",
-    "dense + saturated gaps", "ramp", "low bytes only"};
+    "dense + saturated gaps", "ramp", "low bytes only", "poisson int_max/2"};
 
 static void put_elem(unsigned char *p, uint64_t v, size_t elem) { memcpy(p, &v, elem); } /* little endian */
 
 static void fill(unsigned char *buf, size_t n, size_t elem, int pattern)
 {
     const uint64_t maxv = elem == 8 ? ~(uint64_t) 0 : (((uint64_t) 1 << (8 * elem)) - 1);
+    const double lam = (double) (maxv >> 2); /* ~(signed_max / 2), hard-to-compress counts */
+    const double sig = sqrt(lam);
+    double z_spare = 0.0;
+    int has_spare = 0;
     size_t i, row = 97 + (size_t) (rng() % 300);
     for (i = 0; i < n; i++) {
         uint64_t v = 0, r = rng();
@@ -151,7 +156,30 @@ static void fill(unsigned char *buf, size_t n, size_t elem, int pattern)
         case 5: v = gap ? maxv : ((r & 63) == 0 ? 1 : 0); break;
         case 6: v = gap ? maxv : (((r & 31) + ((r >> 5) & 31)) & maxv); break;
         case 7: v = (i / 3) & maxv; break;
-        default: v = r & 0xff & maxv; break;
+        case 8: v = r & 0xff & maxv; break;
+        default: {
+            double z, dv;
+            if (has_spare) {
+                z = z_spare;
+                has_spare = 0;
+            } else {
+                double u1 = ((double) (r & 0xffffffffUL) + 1.0) / 4294967297.0;
+                double u2 = ((double) ((r >> 32) & 0xffffffffUL) + 1.0) / 4294967297.0;
+                double mag = sqrt(-2.0 * log(u1));
+                double ang = 6.28318530717958647692 * u2;
+                z = mag * cos(ang);
+                z_spare = mag * sin(ang);
+                has_spare = 1;
+            }
+            dv = lam + sig * z + 0.5;
+            if (dv <= 0.0)
+                v = 0;
+            else if (elem < 8 && dv >= (double) maxv)
+                v = maxv;
+            else
+                v = (uint64_t) dv;
+            break;
+        }
         }
         put_elem(buf + i * elem, v, elem);
     }
@@ -317,6 +345,35 @@ int main(int argc, char **argv)
                     fail("tight dst repack", PAC_ZSTD, 2, 0, 32, 16, "-");
                 free(tight);
             }
+        }
+        pac_free(enc);
+    }
+    /* hard-to-compress poisson noise at ~int_max/2: must round-trip cleanly and not regress badly vs stock zstd */
+    {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        for (e = 0; e < 4; e++) {
+            const size_t elem = elems[e];
+            const size_t n = quick ? 32768 / elem : 1048576 / elem;
+            const size_t size = n * elem;
+            const size_t block = PAC_ZSTD_BLOCK;
+            size_t cap = pac_bound(size, elem, block), pc, sc;
+            unsigned char *src = malloc(size), *out = malloc(size), *pbuf = malloc(cap), *sbuf = malloc(cap);
+            fill(src, n, elem, 9);
+            pc = pac_compress_chunk(enc, pbuf, cap, src, size, elem, block);
+            sc = stock_encode(PAC_ZSTD, sbuf, src, size, elem, block);
+            checks += 2;
+            if (!pc || pc > cap || ref_decode(PAC_ZSTD, pbuf, pc, elem, out, size) != (long) size ||
+                memcmp(out, src, size) != 0)
+                fail("poisson int_max/2 roundtrip", PAC_ZSTD, elem, 9, n, block, pac_isa(enc));
+            if (!sc || pc > sc + sc / 100 + 64) {
+                printf("FAIL poisson int_max/2 ratio: elem %lu pac %lu vs stock %lu\n",
+                       (unsigned long) elem, (unsigned long) pc, (unsigned long) sc);
+                fail("poisson int_max/2 ratio", PAC_ZSTD, elem, 9, n, block, pac_isa(enc));
+            }
+            free(src);
+            free(out);
+            free(pbuf);
+            free(sbuf);
         }
         pac_free(enc);
     }

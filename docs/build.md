@@ -43,6 +43,22 @@ zstd:
   `zstd.h` with `ZSTD_STATIC_LINKING_ONLY` and needs `ZSTD_compressSequences`, explicit block
   delimiters and repcode resolution, which zstd keeps in its experimental API.  Tested with zstd
   1.5.7.
+
+## Decoder compatibility floor
+
+Written bitshuffle-zstd chunks target existing readers down to **bitshuffle 0.4.0** (released
+2022-02-24, the first bitshuffle release with Zstandard support) and **zstd v1.5.2** (released
+2022-01-20, also bundled by 2022 `hdf5plugin` builds):
+
+- **`libzstd` `<= v1.5.2` (fixed in `v1.5.4`, Feb 2023):** rejects valid RFC 8878 compressed
+  blocks of exact size `128 KB` (`131072` B) and 0-literal/0-sequence `Compressed_Block`s; neither is
+  emitted here (`ZSTD_compressSequences` keeps compressed blocks `< 128 KB`, and raw/RLE prefixes
+  use `bt_raw`/`bt_rle`).
+- **`libzstd` `<= v1.5.5` (fixed in `v1.5.6`, Mar 2024):** magicless-frame decoder rejects some
+  valid frames; emitted chunks always carry the standard `0xFD2FB528` magic frame header.
+- **`zstd` CLI `<= v1.4.3` (fixed in `v1.4.4`, Nov 2019; CLI only, not `libzstd`):** rejects
+  multi-block frames whose first block is a `131072`-byte `bt_rle` block (`should consume all input
+  error`). `libzstd` of that era decodes them cleanly.
 - **lz4**: `lz4.h`, any version, used by the repack to decode the input.  Tested with 1.9.4.
 - **A bit transpose** with the signature of `bitshuf_encode_block` of
   [kcb](https://github.com/kalcutter/bitshuffle): define `PAC_WITH_KCB` to use that one, or pass
