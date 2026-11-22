@@ -50,12 +50,14 @@ typedef int (*pac_transpose_fn)(char *out, const char *in, char *scratch, size_t
 pac_encoder *pac_create(int codec);
 void pac_free(pac_encoder *enc);
 
-/* Zstandard only, trades size for speed: the literals of a block are stored
- * raw, without Huffman coding (as zstd's negative levels do), when Huffman
- * would save less than `percent` % of them; that is estimated from a sample
- * of the literal bytes.  Default 0: always Huffman, the smallest chunks.
- * 5 or 10: noisy (dense) frames encode about 1.4-1.9 times faster for 4-7 %
- * of ratio (docs/benchmarks.md).  100: always raw. */
+/* Zstandard only, trades size for speed:
+ * - On blocks >= 8192 bytes with bit planes >= 2048 bytes, leading
+ *   incompressible bit planes (whose estimated saving is below
+ *   max(2, min(10, percent)) %) are emitted as raw Zstd blocks (bt_raw)
+ *   before compressing the remaining planes with sequences.
+ * - For the remaining compressed planes, literals are stored raw when Huffman
+ *   would save less than `percent` % of them (0: always Huffman on the suffix;
+ *   100: always raw literals).  Default 0. */
 void pac_set_raw_literals(pac_encoder *enc, int percent);
 
 /* 1 (the default on x86, 0 elsewhere): when the upper bytes of every pixel of a block are zero

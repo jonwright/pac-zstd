@@ -377,6 +377,50 @@ int main(int argc, char **argv)
         }
         pac_free(enc);
     }
+    /* bt_raw boundary regression: plane 0 random ending with 0x5a, plane 1 starting with 0x5a*8 then 0 */
+    {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        const size_t n = 16384;
+        size_t cap = pac_bound(n, 1, 16384), pc, i;
+        unsigned char *src = malloc(n), *out = malloc(n), *pbuf = malloc(cap);
+        for (i = 0; i < n; i++) {
+            unsigned b0 = (unsigned) (rng() & 1);
+            unsigned b1 = i < 64 ? ((0x5aU >> (i & 7)) & 1U) : 0U;
+            if (i >= n - 8)
+                b0 = (0x5aU >> (i & 7)) & 1U;
+            src[i] = (unsigned char) (b0 | (b1 << 1));
+        }
+        pc = pac_compress_chunk(enc, pbuf, cap, src, n, 1, 16384);
+        checks++;
+        if (!pc || pc > cap || ref_decode(PAC_ZSTD, pbuf, pc, 1, out, n) != (long) n ||
+            memcmp(out, src, n) != 0)
+            fail("bt_raw boundary match", PAC_ZSTD, 1, 0, n, 16384, pac_isa(enc));
+        free(src);
+        free(out);
+        free(pbuf);
+        pac_free(enc);
+    }
+    /* bt_raw + plane > 128kB regression: plane 0 random (bt_raw), plane 1 patterned (from - start_from < plane) */
+    {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        const size_t n = 1310720; /* u8, plane = 163840 > ZSTD_BLOCKSIZE_MAX */
+        size_t cap = pac_bound(n, 1, n), pc, i;
+        unsigned char *src = malloc(n), *out = malloc(n), *pbuf = malloc(cap);
+        for (i = 0; i < n; i++) {
+            unsigned b0 = (unsigned) (rng() & 1);
+            unsigned b1 = (i & 7) == 0 ? 1U : 0U;
+            src[i] = (unsigned char) (b0 | (b1 << 1));
+        }
+        pc = pac_compress_chunk(enc, pbuf, cap, src, n, 1, n);
+        checks++;
+        if (!pc || pc > cap || ref_decode(PAC_ZSTD, pbuf, pc, 1, out, n) != (long) n ||
+            memcmp(out, src, n) != 0)
+            fail("bt_raw plane > 128kB", PAC_ZSTD, 1, 0, n, n, pac_isa(enc));
+        free(src);
+        free(out);
+        free(pbuf);
+        pac_free(enc);
+    }
     printf("%ld checks, %ld failures, %d instruction sets, seed %lu\n", checks, failures, tested, seed);
     return failures ? 1 : 0;
 }
