@@ -8,6 +8,7 @@
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Jon Wright, ESRF.  Code written by Claude Fable 5.2.
  */
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,16 +129,20 @@ static size_t stock_encode(int codec, unsigned char *dst, const unsigned char *s
     return n;
 }
 
-#define NPATTERNS 9
+#define NPATTERNS 10
 static const char *const pattern_names[NPATTERNS] = {
     "zeros", "all ones", "noise", "sparse photons", "dense counts", "sparse + saturated gaps",
-    "dense + saturated gaps", "ramp", "low bytes only"};
+    "dense + saturated gaps", "ramp", "low bytes only", "poisson int_max/2"};
 
 static void put_elem(unsigned char *p, uint64_t v, size_t elem) { memcpy(p, &v, elem); } /* little endian */
 
 static void fill(unsigned char *buf, size_t n, size_t elem, int pattern)
 {
     const uint64_t maxv = elem == 8 ? ~(uint64_t) 0 : (((uint64_t) 1 << (8 * elem)) - 1);
+    const double lam = (double) (maxv >> 2); /* ~(signed_max / 2), hard-to-compress counts */
+    const double sig = sqrt(lam);
+    double z_spare = 0.0;
+    int has_spare = 0;
     size_t i, row = 97 + (size_t) (rng() % 300);
     for (i = 0; i < n; i++) {
         uint64_t v = 0, r = rng();
@@ -151,7 +156,30 @@ static void fill(unsigned char *buf, size_t n, size_t elem, int pattern)
         case 5: v = gap ? maxv : ((r & 63) == 0 ? 1 : 0); break;
         case 6: v = gap ? maxv : (((r & 31) + ((r >> 5) & 31)) & maxv); break;
         case 7: v = (i / 3) & maxv; break;
-        default: v = r & 0xff & maxv; break;
+        case 8: v = r & 0xff & maxv; break;
+        default: {
+            double z, dv;
+            if (has_spare) {
+                z = z_spare;
+                has_spare = 0;
+            } else {
+                double u1 = ((double) (r & 0xffffffffUL) + 1.0) / 4294967297.0;
+                double u2 = ((double) ((r >> 32) & 0xffffffffUL) + 1.0) / 4294967297.0;
+                double mag = sqrt(-2.0 * log(u1));
+                double ang = 6.28318530717958647692 * u2;
+                z = mag * cos(ang);
+                z_spare = mag * sin(ang);
+                has_spare = 1;
+            }
+            dv = lam + sig * z + 0.5;
+            if (dv <= 0.0)
+                v = 0;
+            else if (elem < 8 && dv >= (double) maxv)
+                v = maxv;
+            else
+                v = (uint64_t) dv;
+            break;
+        }
         }
         put_elem(buf + i * elem, v, elem);
     }
@@ -174,31 +202,35 @@ static void one_case(pac_encoder *enc[2], size_t elem, int pattern, size_t n, si
     const size_t size = n * elem;
     unsigned char *src = malloc(size + 1), *out = malloc(size + 1);
     size_t cap = pac_bound(size, elem, block), sblock;
-    unsigned char *chunk = malloc(cap + 64), *stock, *re;
-    int ci, narrow, raw;
+    unsigned char *chunk = malloc(cap + 64), *chunk0 = malloc(cap + 64), *stock, *re;
+    int ci, narrow;
     fill(src, n, elem, pattern);
     for (ci = 0; ci < 2; ci++) {
         const int codec = ci ? PAC_ZSTD : PAC_LZ4;
+        size_t c0 = 0;
         for (narrow = 0; narrow < 2; narrow++) {
-            for (raw = 0; raw < (ci ? 3 : 1); raw++) {
-                size_t c;
-                pac_set_narrow(enc[ci], narrow);
-                pac_set_raw_literals(enc[ci], raw == 0 ? 10 : (raw == 1 ? 0 : 100));
-                memset(chunk + cap, 0xA5, 64);
-                c = pac_compress_chunk(enc[ci], chunk, cap, src, size, elem, block);
-                checks++;
-                if (!c || c > cap || ref_decode(codec, chunk, c, elem, out, size) != (long) size ||
-                    memcmp(out, src, size) != 0)
-                    fail("compress", codec, elem, pattern, n, block, pac_isa(enc[ci]));
-                if (chunk[cap] != 0xA5 || chunk[cap + 63] != 0xA5)
-                    fail("wrote past dst", codec, elem, pattern, n, block, pac_isa(enc[ci]));
-                if (pac_compress_chunk(enc[ci], chunk, 11, src, size, elem, block) != 0)
-                    fail("accepted a dst of 11 bytes", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            size_t c;
+            pac_set_narrow(enc[ci], narrow);
+            memset(chunk + cap, 0xA5, 64);
+            c = pac_compress_chunk(enc[ci], chunk, cap, src, size, elem, block);
+            checks++;
+            if (!c || c > cap || ref_decode(codec, chunk, c, elem, out, size) != (long) size ||
+                memcmp(out, src, size) != 0)
+                fail("compress", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            if (chunk[cap] != 0xA5 || chunk[cap + 63] != 0xA5)
+                fail("wrote past dst", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            if (pac_compress_chunk(enc[ci], chunk, 11, src, size, elem, block) != 0)
+                fail("accepted a dst of 11 bytes", codec, elem, pattern, n, block, pac_isa(enc[ci]));
+            if (narrow == 0) {
+                c0 = c;
+                memcpy(chunk0, chunk, c);
+            } else if (c != c0 || memcmp(chunk, chunk0, c) != 0) {
+                fail("narrow mismatch", codec, elem, pattern, n, block, pac_isa(enc[ci]));
             }
         }
         pac_set_narrow(enc[ci], 1);
-        pac_set_raw_literals(enc[ci], 0); /* the default */
     }
+    free(chunk0);
     /* repack: stock chunks with blocks of block / m for m in 1, 2, 31 (when that divides) */
     {
         static const size_t ms[3] = {1, 2, 31};
@@ -318,6 +350,79 @@ int main(int argc, char **argv)
                 free(tight);
             }
         }
+        pac_free(enc);
+    }
+    /* hard-to-compress poisson noise at ~int_max/2: must round-trip cleanly and not regress badly vs stock zstd */
+    {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        for (e = 0; e < 4; e++) {
+            const size_t elem = elems[e];
+            const size_t n = quick ? 32768 / elem : 1048576 / elem;
+            const size_t size = n * elem;
+            const size_t block = PAC_ZSTD_BLOCK;
+            size_t cap = pac_bound(size, elem, block), pc, sc;
+            unsigned char *src = malloc(size), *out = malloc(size), *pbuf = malloc(cap), *sbuf = malloc(cap);
+            fill(src, n, elem, 9);
+            pc = pac_compress_chunk(enc, pbuf, cap, src, size, elem, block);
+            sc = stock_encode(PAC_ZSTD, sbuf, src, size, elem, block);
+            checks += 2;
+            if (!pc || pc > cap || ref_decode(PAC_ZSTD, pbuf, pc, elem, out, size) != (long) size ||
+                memcmp(out, src, size) != 0)
+                fail("poisson int_max/2 roundtrip", PAC_ZSTD, elem, 9, n, block, pac_isa(enc));
+            if (!sc || pc > sc + sc / 100 + 64) {
+                printf("FAIL poisson int_max/2 ratio: elem %lu pac %lu vs stock %lu\n",
+                       (unsigned long) elem, (unsigned long) pc, (unsigned long) sc);
+                fail("poisson int_max/2 ratio", PAC_ZSTD, elem, 9, n, block, pac_isa(enc));
+            }
+            free(src);
+            free(out);
+            free(pbuf);
+            free(sbuf);
+        }
+        pac_free(enc);
+    }
+    /* bt_raw boundary regression: plane 0 random ending with 0x5a, plane 1 starting with 0x5a*8 then 0 */
+    {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        const size_t n = 16384;
+        size_t cap = pac_bound(n, 1, 16384), pc, i;
+        unsigned char *src = malloc(n), *out = malloc(n), *pbuf = malloc(cap);
+        for (i = 0; i < n; i++) {
+            unsigned b0 = (unsigned) (rng() & 1);
+            unsigned b1 = i < 64 ? ((0x5aU >> (i & 7)) & 1U) : 0U;
+            if (i >= n - 8)
+                b0 = (0x5aU >> (i & 7)) & 1U;
+            src[i] = (unsigned char) (b0 | (b1 << 1));
+        }
+        pc = pac_compress_chunk(enc, pbuf, cap, src, n, 1, 16384);
+        checks++;
+        if (!pc || pc > cap || ref_decode(PAC_ZSTD, pbuf, pc, 1, out, n) != (long) n ||
+            memcmp(out, src, n) != 0)
+            fail("bt_raw boundary match", PAC_ZSTD, 1, 0, n, 16384, pac_isa(enc));
+        free(src);
+        free(out);
+        free(pbuf);
+        pac_free(enc);
+    }
+    /* bt_raw + plane > 128kB regression: plane 0 random (bt_raw), plane 1 patterned (from - start_from < plane) */
+    {
+        pac_encoder *enc = pac_create(PAC_ZSTD);
+        const size_t n = 1310720; /* u8, plane = 163840 > ZSTD_BLOCKSIZE_MAX */
+        size_t cap = pac_bound(n, 1, n), pc, i;
+        unsigned char *src = malloc(n), *out = malloc(n), *pbuf = malloc(cap);
+        for (i = 0; i < n; i++) {
+            unsigned b0 = (unsigned) (rng() & 1);
+            unsigned b1 = (i & 7) == 0 ? 1U : 0U;
+            src[i] = (unsigned char) (b0 | (b1 << 1));
+        }
+        pc = pac_compress_chunk(enc, pbuf, cap, src, n, 1, n);
+        checks++;
+        if (!pc || pc > cap || ref_decode(PAC_ZSTD, pbuf, pc, 1, out, n) != (long) n ||
+            memcmp(out, src, n) != 0)
+            fail("bt_raw plane > 128kB", PAC_ZSTD, 1, 0, n, n, pac_isa(enc));
+        free(src);
+        free(out);
+        free(pbuf);
         pac_free(enc);
     }
     printf("%ld checks, %ld failures, %d instruction sets, seed %lu\n", checks, failures, tested, seed);

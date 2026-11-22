@@ -165,7 +165,7 @@ static void emit_record(corpus_writer *w, const char *name, int codec, size_t el
 }
 
 static void emit_compress(corpus_writer *w, pac_encoder *enc, const char *name, int codec,
-                          size_t elem, size_t block, int narrow, int raw_pct,
+                          size_t elem, size_t block, int narrow,
                           const unsigned char *raw, size_t raw_size)
 {
     size_t cap = pac_bound(raw_size, elem, block);
@@ -176,7 +176,6 @@ static void emit_compress(corpus_writer *w, pac_encoder *enc, const char *name, 
         exit(1);
     }
     pac_set_narrow(enc, narrow);
-    pac_set_raw_literals(enc, raw_pct);
     c = pac_compress_chunk(enc, chunk, cap, raw, raw_size, elem, block);
     if (!c || c > cap) {
         fprintf(stderr, "pac_compress_chunk failed for %s (c=%lu cap=%lu)\n", name,
@@ -210,7 +209,6 @@ static void emit_repack(corpus_writer *w, pac_encoder *enc, const char *name, in
     if (use_default_hdr)
         put_be(stock + 8, 0, 4);
     pac_set_narrow(enc, 1);
-    pac_set_raw_literals(enc, 0);
     c = pac_repack_chunk(enc, chunk, dcap, stock, ss, src_codec, elem, dblock);
     if (!c || c > dcap) {
         fprintf(stderr, "pac_repack_chunk failed for %s\n", name);
@@ -268,16 +266,16 @@ int main(int argc, char **argv)
         unsigned char raw[64];
         fill_pattern(raw, 7, elem, 4);
         snprintf(name, sizeof(name), "edge_empty_lz4_e%lu", (unsigned long) elem);
-        emit_compress(&w, enc_lz4, name, PAC_LZ4, elem, block, 1, 0, raw, 0);
+        emit_compress(&w, enc_lz4, name, PAC_LZ4, elem, block, 1, raw, 0);
         snprintf(name, sizeof(name), "edge_empty_zstd_e%lu", (unsigned long) elem);
-        emit_compress(&w, enc_zstd, name, PAC_ZSTD, elem, block, 1, 0, raw, 0);
+        emit_compress(&w, enc_zstd, name, PAC_ZSTD, elem, block, 1, raw, 0);
         snprintf(name, sizeof(name), "edge_tail1_e%lu", (unsigned long) elem);
-        emit_compress(&w, enc_zstd, name, PAC_ZSTD, elem, block, 1, 0, raw, 1 * elem);
+        emit_compress(&w, enc_zstd, name, PAC_ZSTD, elem, block, 1, raw, 1 * elem);
         snprintf(name, sizeof(name), "edge_tail7_e%lu", (unsigned long) elem);
-        emit_compress(&w, enc_lz4, name, PAC_LZ4, elem, block, 1, 0, raw, 7 * elem);
+        emit_compress(&w, enc_lz4, name, PAC_LZ4, elem, block, 1, raw, 7 * elem);
     }
 
-    /* 2. Non-default and default block sizes across elem, patterns, narrow, raw_percent */
+    /* 2. Non-default and default block sizes across elem, patterns, narrow */
     for (ei = 0; ei < 4; ei++) {
         size_t elem = elems[ei];
         for (bi = 0; bi < sizeof(block_table) / sizeof(block_table[0]); bi++) {
@@ -309,12 +307,10 @@ int main(int argc, char **argv)
                     int codec = ci ? PAC_ZSTD : PAC_LZ4;
                     pac_encoder *enc = ci ? enc_zstd : enc_lz4;
                     int narrow = (int) ((bi + (size_t) p) & 1);
-                    int raw_pct = ci ? (p == 0 ? 0 : (p == 1 ? 10 : 100)) : 0;
-                    snprintf(name, sizeof(name), "blk%lu_e%lu_%s_%s_n%d_r%d",
+                    snprintf(name, sizeof(name), "blk%lu_e%lu_%s_%s_n%d",
                              (unsigned long) block, (unsigned long) elem,
-                             ci ? "zstd" : "lz4", pattern_names[pat], narrow, raw_pct);
-                    emit_compress(&w, enc, name, codec, elem, block, narrow, raw_pct, raw,
-                                  raw_size);
+                             ci ? "zstd" : "lz4", pattern_names[pat], narrow);
+                    emit_compress(&w, enc, name, codec, elem, block, narrow, raw, raw_size);
                 }
             }
             free(raw);
@@ -331,9 +327,9 @@ int main(int argc, char **argv)
             unsigned char *raw = (unsigned char *) malloc(raw_size);
             fill_pattern(raw, raw_size / 2, 2, (int) (i % NPATTERNS));
             snprintf(name, sizeof(name), "dec_zstd_b%lu", (unsigned long) block);
-            emit_compress(&w, enc_zstd, name, PAC_ZSTD, 2, block, 1, 10, raw, raw_size);
+            emit_compress(&w, enc_zstd, name, PAC_ZSTD, 2, block, 1, raw, raw_size);
             snprintf(name, sizeof(name), "dec_lz4_b%lu", (unsigned long) block);
-            emit_compress(&w, enc_lz4, name, PAC_LZ4, 2, block, 1, 0, raw, raw_size);
+            emit_compress(&w, enc_lz4, name, PAC_LZ4, 2, block, 1, raw, raw_size);
             free(raw);
         }
     }
@@ -345,15 +341,14 @@ int main(int argc, char **argv)
         size_t i;
 
         memset(raw, 0x5a, blk);
-        emit_compress(&w, enc_zstd, "zstd_rle_0x5a_248k_n0", PAC_ZSTD, 1, blk, 0, 0, raw, blk);
-        emit_compress(&w, enc_zstd, "zstd_rle_0x5a_248k_n1", PAC_ZSTD, 1, blk, 1, 0, raw, blk);
+        emit_compress(&w, enc_zstd, "zstd_rle_0x5a_248k_n0", PAC_ZSTD, 1, blk, 0, raw, blk);
+        emit_compress(&w, enc_zstd, "zstd_rle_0x5a_248k_n1", PAC_ZSTD, 1, blk, 1, raw, blk);
 
         memset(raw, 0xff, blk);
-        emit_compress(&w, enc_zstd, "zstd_rle_0xff_248k", PAC_ZSTD, 2, blk, 1, 0, raw, blk);
+        emit_compress(&w, enc_zstd, "zstd_rle_0xff_248k", PAC_ZSTD, 2, blk, 1, raw, blk);
 
         fill_pattern(raw, blk, 1, 2); /* noise */
-        emit_compress(&w, enc_zstd, "zstd_raw_noise_248k_r10", PAC_ZSTD, 1, blk, 1, 10, raw, blk);
-        emit_compress(&w, enc_zstd, "zstd_raw_noise_248k_r0", PAC_ZSTD, 1, blk, 1, 0, raw, blk);
+        emit_compress(&w, enc_zstd, "zstd_raw_noise_248k", PAC_ZSTD, 1, blk, 1, raw, blk);
         free(raw);
 
         /* bt_raw boundary match regression: plane 0 random ending 0x5a, plane 1 starting 0x5a*8 */
@@ -365,8 +360,7 @@ int main(int argc, char **argv)
                 b0 = (0x5aU >> (i & 7)) & 1U;
             raw[i] = (unsigned char) (b0 | (b1 << 1));
         }
-        emit_compress(&w, enc_zstd, "zstd_btraw_boundary_16k", PAC_ZSTD, 1, 16384, 1, 10, raw,
-                      16384);
+        emit_compress(&w, enc_zstd, "zstd_btraw_boundary_16k", PAC_ZSTD, 1, 16384, 1, raw, 16384);
         free(raw);
     }
 
@@ -381,7 +375,7 @@ int main(int argc, char **argv)
             fill_pattern(raw, blk / el, el, 3); /* sparse photons */
             snprintf(name, sizeof(name), "lz4_plane64k_b%lu_e%lu", (unsigned long) blk,
                      (unsigned long) el);
-            emit_compress(&w, enc_lz4, name, PAC_LZ4, el, blk, 1, 0, raw, blk);
+            emit_compress(&w, enc_lz4, name, PAC_LZ4, el, blk, 1, raw, blk);
             free(raw);
         }
     }
@@ -396,7 +390,7 @@ int main(int argc, char **argv)
             unsigned b1 = (i & 7) == 0 ? 1U : 0U;
             raw1[i] = (unsigned char) (b0 | (b1 << 1));
         }
-        emit_compress(&w, enc_zstd, "large_btraw_plane160k_u8", PAC_ZSTD, 1, n1, 1, 10, raw1, n1);
+        emit_compress(&w, enc_zstd, "large_btraw_plane160k_u8", PAC_ZSTD, 1, n1, 1, raw1, n1);
         free(raw1);
 
         /* 2621440 u16: zero-prefix planes 0..1 + narrow vs non-narrow */
@@ -406,15 +400,15 @@ int main(int argc, char **argv)
             uint16_t v = (uint16_t) (((i & 127) << 2) | ((i & 31) == 0 ? 0xfffcU : 0U));
             memcpy(raw2 + 2 * i, &v, 2);
         }
-        emit_compress(&w, enc_zstd, "large_plane160k_u16_n0", PAC_ZSTD, 2, blk2, 0, 0, raw2, blk2);
-        emit_compress(&w, enc_zstd, "large_plane160k_u16_n1", PAC_ZSTD, 2, blk2, 1, 0, raw2, blk2);
+        emit_compress(&w, enc_zstd, "large_plane160k_u16_n0", PAC_ZSTD, 2, blk2, 0, raw2, blk2);
+        emit_compress(&w, enc_zstd, "large_plane160k_u16_n1", PAC_ZSTD, 2, blk2, 1, raw2, blk2);
         free(raw2);
 
         /* 4194368 u32: plane > 128 KiB for u32 */
         size_t blk4 = 4194368;
         unsigned char *raw4 = (unsigned char *) malloc(blk4);
         fill_pattern(raw4, blk4 / 4, 4, 4);
-        emit_compress(&w, enc_zstd, "large_plane131k_u32", PAC_ZSTD, 4, blk4, 1, 0, raw4, blk4);
+        emit_compress(&w, enc_zstd, "large_plane131k_u32", PAC_ZSTD, 4, blk4, 1, raw4, blk4);
         free(raw4);
     }
 

@@ -7,9 +7,11 @@ The API is documented in [src/pac.h](../src/pac.h); the README has an annotated 
     git submodule update --init
     make              # build/libpac.a and build/libpac.so, with lz4, zstd and kcb inside;
                       # build/libpacbench.so for the scripts in bench/
-    make check        # about 330000 round trips, on every instruction set this CPU has
+    make check        # about 300000 round trips, on every instruction set this CPU has
     build/test_pac 1 5 quick     # the same on small inputs only, for slow machines
     make check-c89    # src/pac.c as strict C89 and as C++98
+    make check-rfc    # validate emitted Zstd frames and LZ4 blocks
+    make check-compat # decode corpus against 2022+ bitshuffle/zstd/lz4 and Go decoders
     make check-asan   # the tests under the address and undefined-behaviour sanitizers
     make coverage     # line and branch coverage of src/ from tests/test_pac.c
     make fuzz         # libFuzzer on pac_repack_chunk and pac_compress_chunk (requires clang)
@@ -54,3 +56,19 @@ per instruction set with target attributes (gcc, clang), as kcb does, and the en
 best one the CPU has when it is created.  MSVC has no target attributes, so a `cl` build has only
 the SSE2 kernel, or the one `/arch` selects, which the whole binary then needs.  kcb has no NEON
 or VSX transpose: on those machines the bit transpose is its portable C code.
+
+## Decoder compatibility floor
+
+Written bitshuffle-zstd chunks target existing readers down to **bitshuffle 0.4.0** (released
+2022-02-24, the first bitshuffle release with Zstandard support) and **zstd v1.5.2** (released
+2022-01-20, also bundled by 2022 `hdf5plugin` builds):
+
+- **`libzstd` `<= v1.5.2` (fixed in `v1.5.4`, Feb 2023):** rejects valid RFC 8878 compressed
+  blocks of exact size `128 KB` (`131072` B) and 0-literal/0-sequence `Compressed_Block`s; neither is
+  emitted here (`ZSTD_compressSequences` keeps compressed blocks `< 128 KB`, and raw/RLE prefixes
+  use `bt_raw`/`bt_rle`).
+- **`libzstd` `<= v1.5.5` (fixed in `v1.5.6`, Mar 2024):** magicless-frame decoder rejects some
+  valid frames; emitted chunks always carry the standard `0xFD2FB528` magic frame header.
+- **`zstd` CLI `<= v1.4.3` (fixed in `v1.4.4`, Nov 2019; CLI only, not `libzstd`):** rejects
+  multi-block frames whose first block is a `131072`-byte `bt_rle` block (`should consume all input
+  error`). `libzstd` of that era decodes them cleanly.

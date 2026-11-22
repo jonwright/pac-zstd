@@ -23,32 +23,21 @@ Ratio / encode GB/s per core:
 
 | | stock lz4, 8 kB (detector today) | plane-aware lz4, 56 kB | stock zstd level 2, 248 kB | plane-aware zstd, 248 kB |
 |---|---|---|---|---|
-| thaumatin, gaps 65535 | 21.7 / 3.16 | 22.5 / 4.58 | 50.0 / 2.12 | 67.1 / 3.22 |
-| thaumatin, gaps 0 | 27.5 / 3.49 | 25.1 / 5.50 | 62.9 / 2.24 | 78.6 / 3.98 |
-| silicon, gaps 0 | 59.7 / 4.73 | 62.0 / 7.49 | 189 / 3.13 | 247 / 6.00 |
-| silicon, gaps 65535 | 39.2 / 4.07 | 41.5 / 5.28 | 129 / 2.89 | 147 / 4.04 |
-| CeO2 uint32, gaps 0 | 4.55 / 3.79 | 4.57 / 5.97 | 4.89 / 1.80 | 5.12 / 2.37 |
-| CeO2 uint32, gaps 2^32-1 | 4.45 / 3.52 | 4.50 / 4.75 | 4.85 / 1.76 | 5.09 / 2.12 |
-| CeO2 uint16, gaps 0 | 2.31 / 2.77 | 2.32 / 3.89 | 2.45 / 1.19 | 2.57 / 1.43 |
-| CeO2 uint16, gaps 65535 | 2.26 / 2.50 | 2.28 / 3.30 | 2.44 / 1.16 | 2.56 / 1.31 |
-| s3DXRD, uint32, gaps 65535 | 33.0 / 4.16 | 31.1 / 6.13 | 83.5 / 2.75 | 100 / 4.44 |
+| thaumatin, gaps 65535 | 21.7 / 3.31 | 22.8 / 4.45 | 50.0 / 2.29 | 67.6 / 3.28 |
+| thaumatin, gaps 0 | 27.5 / 3.71 | 25.5 / 5.72 | 62.9 / 2.54 | 79.5 / 3.99 |
+| silicon, gaps 0 | 59.7 / 4.74 | 64.9 / 7.39 | 189 / 3.46 | 257 / 5.41 |
+| silicon, gaps 65535 | 39.2 / 4.09 | 42.7 / 5.13 | 129 / 3.13 | 149 / 3.86 |
+| CeO2 uint32, gaps 0 | 4.55 / 3.79 | 4.60 / 5.83 | 4.89 / 1.89 | 5.12 / 2.88 |
+| CeO2 uint32, gaps 2^32-1 | 4.45 / 3.52 | 4.52 / 4.65 | 4.85 / 1.83 | 5.08 / 2.62 |
+| CeO2 uint16, gaps 0 | 2.31 / 2.79 | 2.32 / 3.80 | 2.45 / 1.22 | 2.57 / 1.97 |
+| CeO2 uint16, gaps 65535 | 2.26 / 2.52 | 2.28 / 3.23 | 2.44 / 1.18 | 2.55 / 1.78 |
+| s3DXRD, uint32, gaps 65535 (0.1.0) | 33.0 / 4.16 | 31.1 / 6.13 | 83.5 / 2.75 | 100 / 4.44 |
 
 Plane-aware lz4 is the fastest encoder everywhere (1.1 to 1.5 times stock lz4 at 56 kB), but its
 ratio is 1 to 20 % below stock lz4, which also finds other repeats; with zstd the
-entropy coder makes up for that and more.  On dense frames plane-aware zstd has half the speed of
-the detector's lz4 for 11 to 14 % smaller files; raw literals buy the speed back:
-
-`pac_set_raw_literals` (plane-aware zstd, 248 kB; ratio / encode GB/s per core; no effect on the
-sparse cases):
-
-| | 0 % (default) | 5 % | 10 % |
-|---|---|---|---|
-| CeO2 uint32, gaps 0 | 5.12 / 2.37 | 4.91 / 3.37 | 4.78 / 4.17 |
-| CeO2 uint32, gaps 2^32-1 | 5.09 / 2.12 | 4.89 / 2.85 | 4.74 / 3.50 |
-| CeO2 uint16, gaps 0 | 2.57 / 1.43 | 2.44 / 2.24 | 2.40 / 2.66 |
-| CeO2 uint16, gaps 65535 | 2.56 / 1.31 | 2.44 / 1.91 | 2.38 / 2.28 |
-
-At 10 % the dense frames encode about as fast as the detector's lz4 and are still 4 to 5 % smaller.
+entropy coder makes up for that and more.  On dense frames plane-aware zstd automatically emits
+leading incompressible bit planes as raw Zstd blocks (`bt_raw`) to keep encode speed high while
+preserving the ratio on compressible planes.
 
 ## Gaps at zero or at the maximum, and empty frames
 
@@ -57,9 +46,9 @@ blocks) that costs, per frame:
 
 | | gaps at maximum | gaps at 0 | cost of the gaps |
 |---|---:|---:|---:|
-| thaumatin (Eiger2 16M, uint16) | 539 kB | 460 kB | 79 kB, 17 % |
-| silicon (Eiger2 4M, uint16) | 60.9 kB | 36.2 kB | 24.7 kB, 68 % |
-| CeO2 (Eiger2 4M, uint32) | 3516 kB | 3492 kB | 24 kB, 0.7 % |
+| thaumatin (Eiger2 16M, uint16) | 536 kB | 455 kB | 80 kB, 18 % |
+| silicon (Eiger2 4M, uint16) | 59.9 kB | 34.8 kB | 25.1 kB, 72 % |
+| CeO2 (Eiger2 4M, uint32) | 3517 kB | 3493 kB | 24 kB, 0.7 % |
 
 A saturated mask also takes away the narrow transpose (the upper bytes are no longer zero), which
 is why the encoders are slower in those rows.
@@ -68,12 +57,12 @@ An empty frame (`bench/empty_frame.py`, [empty_frame.md](empty_frame.md)), bytes
 
 | empty frame | stock lz4, 8 kB | plane-aware lz4, 56 kB | stock zstd level 2, 248 kB | plane-aware zstd, 248 kB |
 |---|---:|---:|---:|---:|
-| Eiger2 4M, uint16, gaps 0 | 51321 | 44160 | 1086 | 2417 |
-| Eiger2 4M, uint16, gaps at maximum | 100152 | 82282 | 11049 | 13750 |
-| Eiger2 4M, uint32, gaps 0 | 102631 | 103284 | 2138 | 6974 |
-| Eiger2 4M, uint32, gaps at maximum | 156381 | 141440 | 24492 | 19289 |
-| Eiger2 16M, uint16, gaps 0 | 207638 | 178660 | 4298 | 9590 |
-| Eiger2 16M, uint16, gaps at maximum | 507798 | 269424 | 124407 | 45080 |
+| Eiger2 4M, uint16, gaps 0 | 51321 | 37282 | 1086 | 762 |
+| Eiger2 4M, uint16, gaps at maximum | 100152 | 75855 | 11049 | 12610 |
+| Eiger2 4M, uint32, gaps 0 | 102631 | 74552 | 2138 | 1499 |
+| Eiger2 4M, uint32, gaps at maximum | 156381 | 113603 | 24492 | 15089 |
+| Eiger2 16M, uint16, gaps 0 | 207638 | 150848 | 4298 | 3011 |
+| Eiger2 16M, uint16, gaps at maximum | 507798 | 243415 | 124407 | 40683 |
 
 ## Block size
 
@@ -92,7 +81,7 @@ The defaults were chosen from a sweep of 8 to 512 kB (every value in [results.md
 
 Ratios and speed per core are in the README, next to decoding the lz4 and writing stock zstd
 level 2; every output block size is in [results.md](results.md#transcoding-lz4-8-kb-to-zstd).
-In GB/s of lz4 read per core: 0.08 to 0.14 for sparse frames, 0.47 to 0.58 for dense ones.
+In GB/s of lz4 read per core: 0.07 to 0.15 for sparse frames, 0.58 to 0.81 for dense ones.
 
 **Threads**, one encoder each (`bench/bench_repack.py --as-detector`,
 `bench/results/repack_epyc9454.txt`, 48 cores): 8 threads repack 17 to 32 GB/s of pixels, 32
@@ -102,8 +91,7 @@ threads 46 to 94.
 bytes that cross it, the lz4 chunks:
 
 - dense frames (CeO2 uint32): 0.46 GB/s of lz4 per core, so about 7 cores keep up with 25 GbE
-  (measured: 3.7 GB/s on 8 threads) and about 40 with 100 GbE (10.0 GB/s on 32 threads); with
-  `pac_set_raw_literals(enc, 10)` 0.76 GB/s per core, 5 % larger output;
+  (measured: 3.7 GB/s on 8 threads) and about 40 with 100 GbE (10.0 GB/s on 32 threads);
 - sparse frames (thaumatin): 0.15 GB/s of lz4 per core, so about 21 cores for a 25 GbE link full of
   lz4 (measured: 3.2 GB/s on 32 threads).  A link full of 22-fold compressed frames is 69 GB/s of
   pixels, more than a detector delivers; counted in pixels, 1 core does 25 Gb/s and 4 cores
@@ -117,11 +105,8 @@ clipped).  One thread per row:
 |---|---|---|---|---|
 | silicon / 2 (sparse) | 155 | 1604 | 7.7 | 27.2 |
 | CeO2 / 2 (dense) | 1.37 | 1.53 | 0.86 | 3.4 |
-| CeO2 / 2, `--raw 5` | 1.37 | 1.46 | 1.22 | 4.8 |
-| CeO2 / 2, `--raw 10` | 1.37 | 1.40 | 1.57 | 6.2 |
 
-Sparse 8-bit frames need a single core.  Dense ones need about 6 cores at the default, or 4 with
-raw literals at 10 %, which keeps only 2 % of the gain over lz4.
+Sparse 8-bit frames need a single core; dense ones need about 6 cores (at the pre-hybrid baseline).
 
 **Compute for space**: per TB of lz4 on disk, thaumatin takes 1.9 core-hours and frees 0.68 TB;
 silicon 2.8 to 3.8 core-hours for 0.73 to 0.76 TB; the s3DXRD scan 2.3 core-hours for 0.67 TB;
@@ -172,7 +157,5 @@ A working prototype, measured on four public data sets.
 - CI: Linux x86 (gcc, clang, sanitizers, an old gcc), AArch64, macOS, 32-bit x86, ARMv7 and
   ppc64le in containers, MSVC 64 and 32 bit.
 - The tests are round trips over synthetic patterns, sizes and block sizes, and damaged input to
-  the repack, also under the sanitizers.  No fuzzing campaign.
-- The optional raw-literal rule estimates Huffman's saving from one histogram for the whole block;
-  with a table per plane it saves more than that, which is why it costs ratio.
-- An all-zero frame costs more than with stock zstd (see the empty-frame table above).
+  the repack, also under the sanitizers; libFuzzer targets (`make fuzz`, `make fuzz-replay`)
+  cover `pac_compress_chunk` and `pac_repack_chunk` (kept out of CI).

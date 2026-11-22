@@ -54,8 +54,14 @@ for i, (ax, case) in enumerate(zip(axes, CASES)):
         groups.setdefault(round(r["ratio"], 4), []).append(r)
     for g in groups.values():
         r = g[0]
-        ax.annotate("pac %s %%" % ", ".join(str(x["raw_percent"]) for x in g), (r["enc_mbs"] / 1e3, r["ratio"]),
-                    xytext=(-9, PAC_DY.get(r["raw_percent"], 4)), textcoords="offset points", fontsize=8,
+        if "raw_percent" in r:
+            lbl = "pac %s %%" % ", ".join(str(x["raw_percent"]) for x in g)
+            dy = PAC_DY.get(r["raw_percent"], 4)
+        else:
+            lbl = "pac"
+            dy = 4
+        ax.annotate(lbl, (r["enc_mbs"] / 1e3, r["ratio"]),
+                    xytext=(-9, dy), textcoords="offset points", fontsize=8,
                     fontweight="bold", ha="right", zorder=6)
     ax.set_xlim(top / 1e4, top / 1e3 * 1.06)
     ax.set_ylim(1, max(r["ratio"] for r in rs) * 1.1)

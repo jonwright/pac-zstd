@@ -91,11 +91,6 @@ for case, c in R["cases"].items():
         lines.append("| %s | %s | %.3g | %.2f | %.2f | %.3g | %.2f | %.2f |" % (
             case if name == "stock lz4" else "", name, a["ratio"], gbs(c, a["enc_gpix"]), gbs(c, a["dec_gpix"]),
             b["ratio"], gbs(c, b["enc_gpix"]), gbs(c, b["dec_gpix"])))
-lines += ["", "## Raw-literal threshold, pac zstd %d kB (pac_set_raw_literals)" % default["zstd"], "",
-          "| test case | " + " | ".join("%d %%: ratio | encode GB/s" % r["percent"] for r in next(iter(R["cases"].values()))["raw_literals"]) + " |",
-          "|---|" + "---:|---:|" * len(next(iter(R["cases"].values()))["raw_literals"])]
-for case, c in R["cases"].items():
-    lines.append("| %s | " % case + " | ".join("%.3g | %.2f" % (r["ratio"], gbs(c, r["enc_gpix"])) for r in c["raw_literals"]) + " |")
 lines += ["", "## Repack: stock lz4 with 8 kB blocks to zstd with %d kB blocks, no bit transpose" % default["zstd"], "",
           "| test case | ratio lz4 8 kB | ratio zstd %d kB | times smaller | raw GB/s | GB/s of lz4 read |" % default["zstd"],
           "|---|---:|---:|---:|---:|---:|"]

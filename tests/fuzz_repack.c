@@ -11,7 +11,7 @@ static pac_encoder *g_enc[2];
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    int src_codec, dst_ci, dst_codec, isa, cap_mode, raw_percent;
+    int src_codec, dst_ci, dst_codec, isa, cap_mode;
     size_t elem, block, cap_hint, src_len, dst_cap, out_len;
     unsigned char *src, *dst;
     pac_encoder *enc;
@@ -35,14 +35,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     elem = (size_t) 1 << ((data[0] >> 2) & 3);
     isa = (int) ((data[0] >> 4) & 7);
     cap_mode = (data[0] >> 7) & 1;
-    raw_percent = (data[1] & 3) == 0 ? 0 : ((data[1] & 3) == 1 ? 100 : (int) (data[1] >> 2));
     block = fuzz_pick_block(data[2], data[3], elem, 1);
     cap_hint = (size_t) data[4] | ((size_t) data[5] << 8);
 
     enc = g_enc[dst_ci];
     if (!pac_force_isa(enc, isa))
         pac_force_isa(enc, 0);
-    pac_set_raw_literals(enc, raw_percent);
 
     src_len = size - 6;
     src = (unsigned char *) malloc(src_len ? src_len : 1);

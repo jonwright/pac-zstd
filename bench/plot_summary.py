@@ -101,10 +101,6 @@ def encode_or_decode(ax, c, speed):
         x, y = curve(ax, c, [s for s in c["sweep"] if s["encoder"] == name], speed, colour, marker, ls, label)
         xs += x
         ys += y
-    raw = [r for r in c["raw_literals"] if r["percent"] > 0]
-    ax.scatter([gbs(c, r[speed]) for r in raw], [r["ratio"] for r in raw], s=34, marker="^", facecolor=SURF,
-               edgecolor=ORANGE, lw=1.2, zorder=4, label="plane-aware zstd 248 kB,\nraw literals 5 / 10 %")
-    xs += [gbs(c, r[speed]) for r in raw]
     det = pick(c["sweep"], 8, encoder="stock lz4")
     ax.scatter([gbs(c, det[speed])], [det["ratio"]], s=150, marker="*", color=INK, zorder=5,
                label="detector format today:\nstock lz4, 8 kB")

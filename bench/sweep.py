@@ -25,8 +25,6 @@ untranspose).
 The bit transpose alone (kcb, block by block, as every encoder above does it) is timed at every
 block size: the ceiling for any bitshuffle encoder.
 
-At the zstd default block, pac zstd is also run with the raw-literal threshold at 5 and 10 %.
-
 Transcoding: each frame as stock lz4 with 8 kB blocks (what the detector software writes) to zstd
 at every block size, three ways:
 
@@ -67,7 +65,6 @@ CASES = {
 BLOCKS_KB = [8, 16, 24, 32, 48, 56, 64, 96, 128, 192, 248, 256, 384, 496, 512]
 LZ4, ZSTD = 1, 2
 DEFAULT_KB = {LZ4: 56, ZSTD: 248}  # PAC_LZ4_BLOCK, PAC_ZSTD_BLOCK
-RAW_PERCENT = [0, 5, 10]  # pac_set_raw_literals; 0 is the default
 
 p = argparse.ArgumentParser()
 p.add_argument("--data", default=os.path.join(HERE, "data"))
@@ -91,8 +88,6 @@ lib.pac_compress_chunk.restype = sz
 lib.pac_compress_chunk.argtypes = [vp, vp, sz, vp, sz, sz, sz]
 lib.pac_repack_chunk.restype = sz
 lib.pac_repack_chunk.argtypes = [vp, vp, sz, vp, sz, ci, sz, sz]
-lib.pac_set_raw_literals.restype = None
-lib.pac_set_raw_literals.argtypes = [vp, ci]
 lib.pac_isa.restype = ctypes.c_char_p
 lib.pac_isa.argtypes = [vp]
 lib.ref_encode.restype = sz
@@ -205,16 +200,6 @@ for case in CASES:
                         for i, c in enumerate(packed):
                             dset.id.write_direct_chunk((i,) + (0,) * len(shape), c)
                         assert np.array_equal(dset[()], frames), "h5py + hdf5plugin read something else"
-
-    # the raw-literal threshold, pac zstd at its default block
-    res["raw_literals"] = []
-    for pc in RAW_PERCENT:
-        lib.pac_set_raw_literals(enc[ZSTD], pc)
-        packed, ratio, e, d = measure(ZSTD, 1, DEFAULT_KB[ZSTD] * 1024)
-        res["raw_literals"].append({"percent": pc, "ratio": ratio, "enc_gpix": e, "dec_gpix": d})
-        print("pac zstd %dk, raw literals below %d %%: ratio %.3f, %.3f GB/s, decode %.3f GB/s" % (
-            DEFAULT_KB[ZSTD], pc, ratio, e * GB, d * GB), flush=True)
-    lib.pac_set_raw_literals(enc[ZSTD], 0)
 
     # the bit transpose alone, at every block size
     res["transpose"] = []

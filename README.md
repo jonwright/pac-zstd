@@ -11,7 +11,7 @@ dectris/compression and bslz4_to_sparse read them unchanged.  Only the encoder i
   bitshuffle-lz4 (8 kB blocks) that detectors write today, at about the same speed on one core.
 - **Repacking detector files** from lz4 (8 kB) to zstd (248 kB) needs no bit transpose: up to
   twice as fast as decoding and writing stock zstd, with smaller files (table below).
-- **Against stock zstd level 2** with the same bit transpose: 1.1 to 1.9 times faster, 12 to 25 %
+- **Against stock zstd level 2** with the same bit transpose: 1.2 to 1.6 times faster, 13 to 27 %
   smaller on sparse frames, 5 % on dense ones.
 - One C file in the C89 subset, with SSE2, AVX2, AVX-512, VSX and NEON kernels.
 - The same parser can also write bitshuffle-lz4 ("pac lz4": 1.1 to 1.5 times faster than stock
@@ -26,45 +26,35 @@ on sparse ones it is faster than every level.
 ![pac zstd against every zstd level, compression ratio against encode speed](docs/levels.png)
 
 The dashed line is stock bitshuffle-zstd (kcb transpose, then `ZSTD_compressCCtx`) at every level from
--20 to 22; the diamonds are pac zstd with `pac_set_raw_literals` at 0, 5 and 10 % (and 25, 50 and
-100 % on CeO2).  248 kB blocks, one core, detector gaps set to 2^n-1.  The figure shows the uint16
-frames; uint32 gives the same picture and is in the table.  The speed axis is linear and starts at
-1/10 of the fastest encoder in each panel; the slower levels are in the table.
+-20 to 22; the diamond is pac zstd.  248 kB blocks, one core, detector gaps set to 2^n-1.  The
+figure shows the uint16 frames; uint32 gives the same picture and is in the table.  The speed axis
+is linear and starts at 1/10 of the fastest encoder in each panel; the slower levels are in the
+table.
 
-- **Dense frames (CeO2):** pac 0 % is smaller than every level: ratio 2.56 against 2.53 for levels
-  15 to 22 (uint16), at 1321 MB/s against 9 to 40 MB/s.
-- **Sparse frames (silicon, thaumatin):** pac is faster than every level, 3300 to 5300 MB/s.  It is
+- **Dense frames (CeO2):** pac is smaller than every level (ratio ~2.55 against 2.53 for levels 15
+  to 22 on uint16) while automatically emitting incompressible leading bit planes as raw Zstd
+  blocks (`bt_raw`) for high throughput.
+- **Sparse frames (silicon, thaumatin):** pac is faster than every level, 3260 to 5034 MB/s.  It is
   not the smallest: its ratio lies between levels 3 and 15, and level 22 is 4 to 21 % smaller at 7 to
-  27 MB/s.  Raw literals at 5 and 10 % change nothing there.
-- **Raw literals on CeO2:** 5 and 10 % trade 4 to 7 % of ratio for 1.3 to 1.8 times the speed.
-  25, 50 and 100 % give the same chunks as 10 %: at 10 % every literal block of these frames is
-  already stored raw.
-- **Negative levels** can be faster than pac 10 % on dense data.  For uint16 CeO2, levels -20 and
-  -5 run at 3068 and 2366 MB/s against 2317 MB/s, with ratios 12 and 3 % lower.  For uint32 CeO2,
-  level -20 is 2 % slower than pac 10 %, with a 26 % lower ratio.
+  27 MB/s.
 
 Cells are ratio, encode MB/s of pixels.
 
 | encoder | silicon uint16 | silicon uint32 | thaumatin uint16 | thaumatin uint32 | CeO2 uint16 | CeO2 uint32 |
 |---|---:|---:|---:|---:|---:|---:|
-| pac 0 % | 148, 4092 | 261, 5321 | 64.6, 3319 | 122, 4564 | 2.56, 1321 | 5.09, 2130 |
-| pac 5 % | 148, 4072 | 261, 5274 | 64.6, 3288 | 122, 4517 | 2.44, 1929 | 4.89, 2830 |
-| pac 10 % | 148, 4066 | 261, 5296 | 64.6, 3274 | 122, 4520 | 2.38, 2317 | 4.74, 3489 |
-| pac 25 % | - | - | - | - | 2.38, 2319 | 4.74, 3518 |
-| pac 50 % | - | - | - | - | 2.38, 2318 | 4.74, 3517 |
-| pac 100 % | - | - | - | - | 2.38, 2361 | 4.74, 3620 |
-| zstd -20 | 8.5, 3072 | 7.2, 3025 | 8.81, 2824 | 9.89, 3172 | 2.09, 3068 | 3.51, 3421 |
-| zstd -5 | 23.9, 2736 | 23.1, 2820 | 19.0, 2377 | 24.5, 2869 | 2.3, 2366 | 4.26, 2845 |
-| zstd -1 | 66.5, 2888 | 70.2, 3111 | 33.6, 2356 | 47.0, 2906 | 2.39, 2108 | 4.67, 2838 |
-| zstd 1 | 85.9, 2757 | 97.6, 2978 | 42.3, 2290 | 61.2, 2777 | 2.43, 1282 | 4.75, 1875 |
-| zstd 2 | 130, 2899 | 208, 3401 | 48.1, 2167 | 81.2, 2820 | 2.44, 1154 | 4.85, 1765 |
-| zstd 3 | 131, 3285 | 211, 3979 | 47.3, 2200 | 79.6, 2968 | 2.44, 1087 | 4.84, 1720 |
-| zstd 9 | 155, 837 | 286, 1333 | 57.8, 491 | 112, 844 | 2.45, 331 | 4.88, 582 |
-| zstd 15 | 176, 111 | 311, 204 | 66.4, 87 | 127, 171 | 2.53, 40 | 5.02, 82 |
-| zstd 19 | 181, 31 | 324, 59 | 66.7, 22 | 129, 43 | 2.53, 14 | 5.04, 24 |
+| pac | 150, 3879 | 276, 5034 | 65.0, 3260 | 125, 4455 | 2.55, 1774 | 5.08, 2591 |
+| zstd -20 | 8.50, 2949 | 7.20, 2949 | 8.81, 2721 | 9.89, 3050 | 2.09, 3051 | 3.51, 3238 |
+| zstd -5 | 23.9, 2650 | 23.1, 2750 | 19.0, 2315 | 24.5, 2783 | 2.30, 2350 | 4.26, 2782 |
+| zstd -1 | 66.5, 2775 | 70.2, 2987 | 33.6, 2286 | 47.0, 2791 | 2.39, 2096 | 4.67, 2694 |
+| zstd 1 | 85.9, 2755 | 97.6, 2987 | 42.3, 2287 | 61.2, 2785 | 2.43, 1287 | 4.75, 1866 |
+| zstd 2 | 130, 3131 | 208, 3694 | 48.1, 2265 | 81.2, 2944 | 2.44, 1184 | 4.85, 1832 |
+| zstd 3 | 131, 2891 | 211, 3446 | 47.3, 2015 | 79.6, 2650 | 2.44, 1070 | 4.84, 1631 |
+| zstd 9 | 155, 835 | 286, 1329 | 57.8, 488 | 112, 841 | 2.45, 331 | 4.88, 583 |
+| zstd 15 | 176, 114 | 311, 211 | 66.4, 89 | 127, 176 | 2.53, 41 | 5.02, 84 |
+| zstd 19 | 181, 31 | 324, 60 | 66.7, 22 | 129, 44 | 2.53, 14 | 5.04, 24 |
 | zstd 22 | 183, 14 | 329, 27 | 67.2, 7 | 130, 14 | 2.53, 9 | 5.04, 14 |
 
-Rerun: `python3 bench/levels.py --core N` (CeO2 with `--only CeO2 --raw 0,5,10,25,50,100`), then
+Rerun: `python3 bench/levels.py --core N`, then
 `python3 bench/plot_levels.py`; the numbers are in `bench/results/levels.json`.
 
 ## Transcoding detector files: lz4 (8 kB) to zstd (248 kB)
@@ -79,10 +69,10 @@ uncompressed pixels; fps (frames/s) is for the detector of that data set (Eiger2
 <table>
 <tr><th rowspan="2" align="left">frames</th><th rowspan="2" align="center">lz4 8 kB<br>ratio (input)</th><th colspan="3" align="center">pac zstd 248 kB</th><th colspan="3" align="center">zstd-2 248 kB</th></tr>
 <tr><th>ratio</th><th>GB/s/core</th><th>fps/core</th><th>ratio</th><th>GB/s/core</th><th>fps/core</th></tr>
-<tr><td>silicon (4M, uint16)</td><td align="right"><code>59.73</code></td><td align="right"><code>247.10</code></td><td align="right"><code>4.57</code></td><td align="right"><code>511</code></td><td align="right"><code>188.59</code></td><td align="right"><code>2.30</code></td><td align="right"><code>257</code></td></tr>
-<tr><td>thaumatin (16M, uint16)</td><td align="right"><code>27.54</code></td><td align="right"><code>78.64</code></td><td align="right"><code>3.18</code></td><td align="right"><code>88</code></td><td align="right"><code>62.93</code></td><td align="right"><code>1.60</code></td><td align="right"><code>44</code></td></tr>
-<tr><td>CeO2 powder (4M, uint16)</td><td align="right"><code>2.31</code></td><td align="right"><code>2.57</code></td><td align="right"><code>1.35</code></td><td align="right"><code>151</code></td><td align="right"><code>2.45</code></td><td align="right"><code>1.03</code></td><td align="right"><code>116</code></td></tr>
-<tr><td>CeO2 powder (4M, uint32)</td><td align="right"><code>4.55</code></td><td align="right"><code>5.12</code></td><td align="right"><code>2.14</code></td><td align="right"><code>120</code></td><td align="right"><code>4.89</code></td><td align="right"><code>1.50</code></td><td align="right"><code>84</code></td></tr>
+<tr><td>silicon (4M, uint16)</td><td align="right"><code>59.73</code></td><td align="right"><code>257.03</code></td><td align="right"><code>4.35</code></td><td align="right"><code>487</code></td><td align="right"><code>188.59</code></td><td align="right"><code>2.49</code></td><td align="right"><code>278</code></td></tr>
+<tr><td>thaumatin (16M, uint16)</td><td align="right"><code>27.54</code></td><td align="right"><code>79.49</code></td><td align="right"><code>3.23</code></td><td align="right"><code>89</code></td><td align="right"><code>62.93</code></td><td align="right"><code>1.77</code></td><td align="right"><code>49</code></td></tr>
+<tr><td>CeO2 powder (4M, uint16)</td><td align="right"><code>2.31</code></td><td align="right"><code>2.57</code></td><td align="right"><code>1.88</code></td><td align="right"><code>210</code></td><td align="right"><code>2.45</code></td><td align="right"><code>1.06</code></td><td align="right"><code>118</code></td></tr>
+<tr><td>CeO2 powder (4M, uint32)</td><td align="right"><code>4.55</code></td><td align="right"><code>5.12</code></td><td align="right"><code>2.65</code></td><td align="right"><code>148</code></td><td align="right"><code>4.89</code></td><td align="right"><code>1.56</code></td><td align="right"><code>87</code></td></tr>
 </table>
 
 **Gaps and bad pixels at the type's maximum** (as detectors write them):
@@ -90,11 +80,11 @@ uncompressed pixels; fps (frames/s) is for the detector of that data set (Eiger2
 <table>
 <tr><th rowspan="2" align="left">frames</th><th rowspan="2" align="center">lz4 8 kB<br>ratio (input)</th><th colspan="3" align="center">pac zstd 248 kB</th><th colspan="3" align="center">zstd-2 248 kB</th></tr>
 <tr><th>ratio</th><th>GB/s/core</th><th>fps/core</th><th>ratio</th><th>GB/s/core</th><th>fps/core</th></tr>
-<tr><td>silicon (4M, uint16)</td><td align="right"><code>39.18</code></td><td align="right"><code>146.84</code></td><td align="right"><code>4.16</code></td><td align="right"><code>465</code></td><td align="right"><code>129.08</code></td><td align="right"><code>2.31</code></td><td align="right"><code>258</code></td></tr>
-<tr><td>thaumatin (16M, uint16)</td><td align="right"><code>21.74</code></td><td align="right"><code>67.10</code></td><td align="right"><code>3.10</code></td><td align="right"><code>86</code></td><td align="right"><code>50.04</code></td><td align="right"><code>1.61</code></td><td align="right"><code>45</code></td></tr>
-<tr><td>CeO2 powder (4M, uint16)</td><td align="right"><code>2.26</code></td><td align="right"><code>2.56</code></td><td align="right"><code>1.24</code></td><td align="right"><code>139</code></td><td align="right"><code>2.44</code></td><td align="right"><code>1.01</code></td><td align="right"><code>113</code></td></tr>
-<tr><td>CeO2 powder (4M, uint32)</td><td align="right"><code>4.45</code></td><td align="right"><code>5.09</code></td><td align="right"><code>2.15</code></td><td align="right"><code>120</code></td><td align="right"><code>4.85</code></td><td align="right"><code>1.54</code></td><td align="right"><code>86</code></td></tr>
-<tr><td>s3DXRD scan (4M, uint32)</td><td align="right"><code>33.03</code></td><td align="right"><code>100.27</code></td><td align="right"><code>4.02</code></td><td align="right"><code>225</code></td><td align="right"><code>83.47</code></td><td align="right"><code>2.14</code></td><td align="right"><code>120</code></td></tr>
+<tr><td>silicon (4M, uint16)</td><td align="right"><code>39.18</code></td><td align="right"><code>149.17</code></td><td align="right"><code>4.12</code></td><td align="right"><code>461</code></td><td align="right"><code>129.08</code></td><td align="right"><code>2.45</code></td><td align="right"><code>274</code></td></tr>
+<tr><td>thaumatin (16M, uint16)</td><td align="right"><code>21.74</code></td><td align="right"><code>67.57</code></td><td align="right"><code>3.26</code></td><td align="right"><code>90</code></td><td align="right"><code>50.04</code></td><td align="right"><code>1.73</code></td><td align="right"><code>48</code></td></tr>
+<tr><td>CeO2 powder (4M, uint16)</td><td align="right"><code>2.26</code></td><td align="right"><code>2.55</code></td><td align="right"><code>1.71</code></td><td align="right"><code>191</code></td><td align="right"><code>2.44</code></td><td align="right"><code>1.04</code></td><td align="right"><code>116</code></td></tr>
+<tr><td>CeO2 powder (4M, uint32)</td><td align="right"><code>4.45</code></td><td align="right"><code>5.08</code></td><td align="right"><code>2.71</code></td><td align="right"><code>151</code></td><td align="right"><code>4.85</code></td><td align="right"><code>1.59</code></td><td align="right"><code>89</code></td></tr>
+<tr><td>s3DXRD scan (4M, uint32, 0.1.0)</td><td align="right"><code>33.03</code></td><td align="right"><code>100.27</code></td><td align="right"><code>4.02</code></td><td align="right"><code>225</code></td><td align="right"><code>83.47</code></td><td align="right"><code>2.14</code></td><td align="right"><code>120</code></td></tr>
 </table>
 
 ![repack gain](docs/repack_gain.png)
@@ -176,12 +166,10 @@ n = pac_repack_chunk(enc,
 pac_free(enc);
 ```
 
-Options (each only trades speed against size; any reader reads the result):
-`pac_set_raw_literals(enc, percent)` skips Huffman coding of literals that would shrink less than
-`percent` %: 5 or 10 encode dense frames 1.4 to 1.9 times faster for 4 to 7 % of ratio.
-`pac_set_narrow` and `pac_set_transpose` control the bit transpose.  **[src/pac.h](src/pac.h) is
-the reference for every call.**  To build it into another code base, see
-[docs/build.md](docs/build.md).
+Incompressible leading bit planes are automatically emitted as raw Zstd blocks (`bt_raw`) with no
+tuning knob needed; `pac_set_narrow` and `pac_set_transpose` control the bit transpose without
+changing the output.  **[src/pac.h](src/pac.h) is the reference for every call.**  To build it into another code base,
+see [docs/build.md](docs/build.md).
 
 ## To do
 
@@ -194,8 +182,8 @@ the reference for every call.**  To build it into another code base, see
   master files) is the hard part.
 - **An entropy coder tuned to diffraction data.**  The literals left after the parse are bit
   planes of photon counts, close to Poisson statistics, plus Bragg peaks and rings.  Today zstd's
-  general-purpose Huffman stage is the price of the small files (the raw-literal option trades it
-  away).  A coder that knows the statistics (per-plane bit densities, neighbouring pixels, the
+  general-purpose Huffman stage is the price of the small files (leading incompressible planes
+  are stored raw as `bt_raw`).  A coder that knows the statistics (per-plane bit densities, neighbouring pixels, the
   previous frame) could be both smaller and faster; learning such a model from the large public
   archives of detector frames is an AI/ML project looking for funding.
 - **An entropy stage of our own for zstd**, in place of `ZSTD_compressSequences`.  On dense frames
@@ -205,7 +193,6 @@ the reference for every call.**  To build it into another code base, see
   on noisy frames (CeO2); not for structured planes (it would double thaumatin's literals).  zstd
   has no call that accepts a table, so this means writing the literal and sequence sections of
   the zstd block ourselves; the decoders stay stock.
-- All-zero blocks as a zstd RLE block (an empty frame costs twice what stock zstd needs).
 - NEON on ARM hardware; a 32-bit ARM NEON kernel; SIMD for the narrow-transpose packing off x86.
 - A GPU encoder: the parse is two compares and a prefix scan, and the LZ4 output can be laid out
   with a prefix sum.
