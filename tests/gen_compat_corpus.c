@@ -364,6 +364,42 @@ int main(int argc, char **argv)
         free(raw);
     }
 
+    /* 4b. A zstd group that regenerates exactly 128 KiB (the <= v1.5.2
+     * Compressed_Block erratum).  U16 with 65536-element blocks: 16 planes x
+     * 8192 B; u32 with 32768-element blocks: 32 planes x 4096 B.  Each raw_size
+     * is one 131072-byte block, so the block grouping can regenerate exactly
+     * ZSTD_BLOCKSIZE_MAX.  Random data is nearly incompressible (pac emits
+     * bt_raw), a 0..3 ramp is still compressible.  check_rfc prints the largest
+     * Compressed_Block size seen and asserts it is < 131072. */
+    {
+        static const struct { size_t elem; size_t elems; int pat; const char *nm; }
+        bcases[] = {
+            {2, 65536, 9, "zstd_boundary_128k_u16_random"},       /* 16 planes x 8192 B */
+            {2, 65536, 10, "zstd_boundary_128k_u16_low"},         /* values 0..3 */
+            {4, 32768, 9, "zstd_boundary_128k_u32_random"},       /* 32 planes x 4096 B */
+            {4, 32768, 10, "zstd_boundary_128k_u32_low"},         /* values 0..3 */
+        };
+        size_t bi;
+        for (bi = 0; bi < sizeof(bcases) / sizeof(bcases[0]); bi++) {
+            size_t elem = bcases[bi].elem;
+            size_t blk = bcases[bi].elems * elem; /* 131072 bytes */
+            unsigned char *raw = (unsigned char *) malloc(blk);
+            size_t i;
+            /* reuse the corpus patterns; 9 = "dense", 10 = a 0..maxv/2 value ramp */
+            for (i = 0; i < blk / elem; i++) {
+                uint64_t v = rng(), maxv = (elem == 4) ? 0xffffffffULL : 0xffffULL;
+                if (bcases[bi].pat == 9)
+                    v = rng() & maxv; /* random */
+                else
+                    v = (rng() & 3);  /* 0..3, low entropy */
+                memcpy(raw + i * elem, &v, elem);
+            }
+            emit_compress(&w, enc_zstd, bcases[bi].nm, PAC_ZSTD, elem, blk, (int) (bi & 1),
+                          raw, blk);
+            free(raw);
+        }
+    }
+
     /* 5. LZ4 16-bit offset boundary (plane = 65535 vs 65536) */
     {
         static const size_t lz_blocks[3] = {524280, 524288, 1048576};
