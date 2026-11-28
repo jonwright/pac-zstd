@@ -23,6 +23,7 @@ extern int bitshuf_decode_block(char *out, const char *in, char *scratch, size_t
 
 static char g_cur_case[256] = "(none)";
 static size_t g_cur_block = 0;
+static size_t g_max_cblock_bsize = 0; /* largest Compressed_Block (128 KiB erratum) seen */
 static int g_clean_exit = 0;
 
 static void on_exit_report(void)
@@ -197,6 +198,8 @@ static int validate_zstd_rfc8878(const unsigned char *src, size_t len, size_t ex
             size_t regen_size = 0, comp_size = 0, nb_seq = 0;
             unsigned char b0;
 
+            if (bsize > g_max_cblock_bsize)
+                g_max_cblock_bsize = bsize;
             /* v1.5.2 erratum: Compressed_Block size == 128 KiB was rejected */
             if (bsize > block_max || bsize >= 131072U || pos + bsize > len) {
                 *err_out = "Compressed_Block size invalid or >= 128 KiB";
@@ -665,5 +668,13 @@ int main(int argc, char **argv)
     fclose(f);
     g_clean_exit = 1;
     printf("check_rfc: %u cases checked, %u failures\n", count, failures);
+    printf("check_rfc: largest Compressed_Block size %lu bytes (zstd reject at >= 131072)\n",
+           (unsigned long) g_max_cblock_bsize);
+    if (g_max_cblock_bsize >= 131072U) {
+        fprintf(stderr, "check_rfc: FATAL: a Compressed_Block of %lu bytes was emitted "
+                        "(%s block %lu); <= v1.5.2 rejects it\n",
+                (unsigned long) g_max_cblock_bsize, g_cur_case, (unsigned long) g_cur_block);
+        return 1;
+    }
     return failures ? 1 : 0;
 }
