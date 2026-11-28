@@ -47,19 +47,29 @@ zstd:
 ## Decoder compatibility floor
 
 Written bitshuffle-zstd chunks target existing readers down to **bitshuffle 0.4.0** (released
-2022-02-24, the first bitshuffle release with Zstandard support) and **zstd v1.5.2** (released
-2022-01-20, also bundled by 2022 `hdf5plugin` builds):
+2022-02-24, the first bitshuffle release with Zstandard support) with the zstd commit it bundles,
+**`18d02cbf`** (`v1.4.7-403`; hence `zstd 1.4.7+`), and **LZ4 1.9.x** (`lz4` is the version the
+transposed blocks use).  `make check-compat` runs this floor (`zstd 18d02cbf`, plus `bitshuffle
+0.4.0 as released`: its `src/`, its bundled `lz4/`, and the zstd commit it pins); the offline matrix
+(`COMPAT_MATRIX=1 make check-compat-matrix`) sweeps every zstd release `v1.4.7` .. `v1.5.7` plus
+`dev`, and every recent lz4.
 
-- **`libzstd` `<= v1.5.2` (fixed in `v1.5.4`, Feb 2023):** rejects valid RFC 8878 compressed
-  blocks of exact size `128 KB` (`131072` B) and 0-literal/0-sequence `Compressed_Block`s; neither is
-  emitted here (`ZSTD_compressSequences` keeps compressed blocks `< 128 KB`, and raw/RLE prefixes
-  use `bt_raw`/`bt_rle`).
+The decoder versions tested each have an errata note that the encoder avoids:
+
+- **`libzstd` `<= v1.5.2` (including the `18d02cbf` floor; fixed in `v1.5.4`, Feb 2023):** rejects
+  valid RFC 8878 compressed blocks of exact size `128 KB` (`131072` B) and 0-literal/0-sequence
+  `Compressed_Block`s.  `ZSTD_compressSequences` cannot emit either: it falls back to a raw block
+  once the compressed size reaches `srcSize - ZSTD_minGain`, so a `Compressed_Block` is always
+  strictly smaller than the block it replaces (verified: the largest `Compressed_Block` over the
+  test corpus is `121481` bytes, below `131072`).  Raw/RLE prefixes use `bt_raw`/`bt_rle`, and
+  `tests/check_rfc.c` asserts the largest `Compressed_Block` is `< 131072`.
 - **`libzstd` `<= v1.5.5` (fixed in `v1.5.6`, Mar 2024):** magicless-frame decoder rejects some
   valid frames; emitted chunks always carry the standard `0xFD2FB528` magic frame header.
 - **`zstd` CLI `<= v1.4.3` (fixed in `v1.4.4`, Nov 2019; CLI only, not `libzstd`):** rejects
   multi-block frames whose first block is a `131072`-byte `bt_rle` block (`should consume all input
   error`). `libzstd` of that era decodes them cleanly.
-- **lz4**: `lz4.h`, any version, used by the repack to decode the input.  Tested with 1.9.4.
+- **lz4**: `lz4.h`, any version, used by the repack to decode the input.  Tested with 1.9.3
+  (bitshuffle 0.4.0's bundled version), 1.9.4, 1.10.0 and `dev`.
 - **A bit transpose** with the signature of `bitshuf_encode_block` of
   [kcb](https://github.com/kalcutter/bitshuffle): define `PAC_WITH_KCB` to use that one, or pass
   your own with `pac_set_transpose()`.  `pac_repack_chunk` needs none.
